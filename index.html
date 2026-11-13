@@ -1,0 +1,1329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ZeroDrop — Screening-to-Care Loop</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════
+   DESIGN TOKENS — single source of truth
+   Both themes defined here; .light body overrides them.
+═══════════════════════════════════════════════════════ */
+:root {
+  --bg:        #07090f;
+  --bg-raised: #0d1117;
+  --bg-card:   #111827;
+  --bg-hover:  #1a2235;
+  --border:    rgba(255,255,255,0.08);
+  --border-hi: rgba(255,255,255,0.14);
+  --text-1:    #f0f4fa;
+  --text-2:    #8b9ab0;
+  --text-3:    #485a72;
+  --accent:    #0ea5e9;
+  --accent-2:  #38bdf8;
+  --accent-bg: rgba(14,165,233,0.10);
+  --green:     #10b981;
+  --green-bg:  rgba(16,185,129,0.12);
+  --amber:     #f59e0b;
+  --amber-bg:  rgba(245,158,11,0.12);
+  --red:       #ef4444;
+  --red-bg:    rgba(239,68,68,0.10);
+  --purple:    #8b5cf6;
+  --shadow:    0 1px 3px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05);
+  --radius:    10px;
+  --radius-sm: 7px;
+}
+body.light {
+  --bg:        #f1f5fb;
+  --bg-raised: #ffffff;
+  --bg-card:   #f8fafc;
+  --bg-hover:  #eef2f8;
+  --border:    rgba(0,0,0,0.07);
+  --border-hi: rgba(0,0,0,0.13);
+  --text-1:    #0d1117;
+  --text-2:    #374a62;
+  --text-3:    #7a8fa3;
+  --accent:    #0284c7;
+  --accent-2:  #0369a1;
+  --accent-bg: rgba(2,132,199,0.08);
+  --green:     #059669;
+  --green-bg:  rgba(5,150,105,0.10);
+  --amber:     #d97706;
+  --amber-bg:  rgba(217,119,6,0.10);
+  --red:       #dc2626;
+  --red-bg:    rgba(220,38,38,0.08);
+  --shadow:    0 1px 4px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.05);
+}
+
+/* ═══ RESET ═══════════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{height:100%;font-size:14px;-webkit-text-size-adjust:100%}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:var(--bg);color:var(--text-1);
+  height:100%;overflow:hidden;
+  transition:background .25s,color .25s;
+}
+button{font-family:inherit;cursor:pointer}
+a{color:var(--accent);text-decoration:none}
+input,select,textarea{font-family:inherit}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-thumb{background:var(--border-hi);border-radius:3px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ═══ TOPBAR ═══════════════════════════════════════════ */
+#topbar{
+  position:fixed;top:0;left:0;right:0;height:52px;z-index:300;
+  background:var(--bg-raised);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 20px;gap:14px;
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.top-logo{font-size:16px;font-weight:800;letter-spacing:-.4px;color:var(--text-1)}
+.top-logo span{color:var(--accent)}
+.status-pill{
+  display:flex;align-items:center;gap:6px;
+  background:var(--green-bg);border:1px solid rgba(16,185,129,.22);
+  border-radius:20px;padding:3px 10px;font-size:11px;color:var(--green);font-weight:500;
+}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.top-spacer{flex:1}
+.nav-tabs{display:flex;gap:2px}
+.nav-btn{
+  padding:5px 13px;border-radius:6px;font-size:12px;font-weight:500;
+  color:var(--text-2);border:none;background:transparent;
+  transition:background .12s,color .12s;
+}
+.nav-btn:hover{background:var(--bg-hover);color:var(--text-1)}
+.nav-btn.active{background:var(--bg-card);color:var(--accent-2)}
+.theme-toggle{
+  width:34px;height:34px;border-radius:8px;border:1px solid var(--border-hi);
+  background:var(--bg-card);color:var(--text-2);font-size:15px;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .12s;
+}
+.theme-toggle:hover{background:var(--bg-hover);color:var(--text-1)}
+
+/* ═══ SHELL ════════════════════════════════════════════ */
+#shell{
+  position:fixed;top:52px;bottom:0;left:0;right:0;
+  display:flex;overflow:hidden;
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+
+/* ═══ SIDEBAR ══════════════════════════════════════════ */
+#sidebar{
+  width:230px;min-width:230px;
+  background:var(--bg-raised);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.sb-section{padding:14px 12px 6px}
+.sb-label{
+  font-size:10px;font-weight:700;color:var(--text-3);
+  text-transform:uppercase;letter-spacing:.8px;
+  padding:0 4px;margin-bottom:6px;
+}
+.sb-item{
+  display:flex;align-items:center;gap:9px;padding:7px 8px;
+  border-radius:7px;cursor:pointer;color:var(--text-2);
+  font-size:12.5px;font-weight:500;border:none;background:transparent;
+  width:100%;text-align:left;transition:background .12s,color .12s;
+}
+.sb-item:hover{background:var(--bg-hover);color:var(--text-1)}
+.sb-item.active{background:var(--accent-bg);color:var(--accent-2)}
+.sb-item .badge{
+  margin-left:auto;font-size:10px;font-weight:700;
+  border-radius:10px;padding:1px 7px;
+}
+.badge-red{background:var(--red);color:#fff}
+.badge-amber{background:var(--amber);color:#07090f}
+.badge-green{background:var(--green);color:#fff}
+.badge-blue{background:var(--accent);color:#fff}
+.sb-divider{height:1px;background:var(--border);margin:8px 12px}
+.sb-footer{
+  margin-top:auto;padding:12px;border-top:1px solid var(--border);
+}
+.sb-stat{display:flex;justify-content:space-between;padding:3px 0}
+.sb-stat .sk{font-size:11px;color:var(--text-3)}
+.sb-stat .sv{font-size:12px;font-weight:600;color:var(--text-1)}
+
+/* ═══ MAIN ═════════════════════════════════════════════ */
+#main{
+  flex:1;overflow-y:auto;overflow-x:hidden;padding:20px;
+  scrollbar-width:thin;
+}
+
+/* ═══ AGENT PANEL ══════════════════════════════════════ */
+#agent-panel{
+  width:290px;min-width:290px;
+  background:var(--bg-raised);border-left:1px solid var(--border);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.ap-header{
+  padding:14px 15px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;
+}
+.ap-pulse{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite;flex-shrink:0}
+.ap-title{font-size:12px;font-weight:600;color:var(--text-1)}
+.ap-sub{font-size:10px;color:var(--text-3)}
+#agent-log{
+  flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:3px;
+  scrollbar-width:thin;
+}
+.log-line{
+  font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.65;
+  padding:5px 8px;border-radius:5px;background:var(--bg-card);
+  border-left:2px solid var(--border-hi);color:var(--text-2);word-break:break-word;
+}
+.log-line.info   {border-left-color:var(--accent)}
+.log-line.success{border-left-color:var(--green);color:var(--green)}
+.log-line.warn   {border-left-color:var(--amber);color:var(--amber)}
+.log-line.error  {border-left-color:var(--red);color:var(--red)}
+.log-line.action {border-left-color:var(--purple);color:var(--purple)}
+.log-ts{color:var(--text-3);margin-right:4px}
+.ap-controls{
+  padding:9px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:5px;
+}
+.ap-btn{
+  padding:7px 10px;border-radius:6px;font-size:11px;font-weight:500;
+  border:1px solid var(--border-hi);background:var(--bg-card);color:var(--text-2);
+  cursor:pointer;text-align:left;transition:all .12s;
+}
+.ap-btn:hover{background:var(--bg-hover);color:var(--text-1);border-color:var(--border-hi)}
+.ap-btn.primary{background:var(--accent-bg);color:var(--accent-2);border-color:rgba(14,165,233,.3)}
+
+/* ═══ VIEWS ════════════════════════════════════════════ */
+.view{display:none}
+.view.active{display:block}
+
+/* ═══ TYPOGRAPHY ═══════════════════════════════════════ */
+.page-title{font-size:20px;font-weight:700;letter-spacing:-.3px;margin-bottom:3px}
+.page-sub{font-size:12px;color:var(--text-3);margin-bottom:18px}
+.section-label{
+  font-size:10px;font-weight:700;color:var(--text-3);
+  text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;
+}
+.case-id-mono{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-3)}
+
+/* ═══ CARDS ════════════════════════════════════════════ */
+.card{
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);
+  margin-bottom:12px;
+}
+.card-sm{
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:11px 13px;margin-bottom:8px;
+}
+.card-sm:hover{border-color:var(--accent);background:var(--bg-hover)}
+
+/* ═══ KPI GRID ═════════════════════════════════════════ */
+.kpi-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+  gap:10px;margin-bottom:20px;
+}
+.kpi{
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:15px 16px;box-shadow:var(--shadow);
+}
+.kpi-label{font-size:10px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px}
+.kpi-val{font-size:28px;font-weight:800;line-height:1;margin-bottom:4px}
+.kpi-delta{font-size:11px;color:var(--text-3)}
+.kpi-delta.up{color:var(--green)}
+.kpi-delta.down{color:var(--red)}
+
+/* ═══ TAGS ══════════════════════════════════════════════ */
+.tag{display:inline-block;font-size:10px;font-weight:600;padding:2px 9px;border-radius:20px}
+.tag-critical{background:var(--red-bg);color:var(--red)}
+.tag-high    {background:var(--amber-bg);color:var(--amber)}
+.tag-normal  {background:var(--green-bg);color:var(--green)}
+.tag-stage   {background:var(--accent-bg);color:var(--accent-2)}
+.tag-breach  {background:var(--red-bg);color:var(--red)}
+.tag-warn    {background:var(--amber-bg);color:var(--amber)}
+.tag-ok      {background:var(--green-bg);color:var(--green)}
+
+/* ═══ STAGE TRACKER ════════════════════════════════════ */
+.tracker{display:flex;align-items:center;gap:0;padding:12px 0;overflow-x:auto}
+.trk-step{display:flex;flex-direction:column;align-items:center;min-width:76px;gap:4px}
+.trk-node{
+  width:30px;height:30px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:700;position:relative;z-index:1;
+  border:2px solid var(--border-hi);background:var(--bg-card);color:var(--text-3);
+}
+.trk-node.done  {background:var(--green);border-color:var(--green);color:#fff}
+.trk-node.active{background:var(--accent);border-color:var(--accent);color:#fff;animation:glow 2s infinite}
+@keyframes glow{0%,100%{box-shadow:0 0 0 0 rgba(14,165,233,.4)}50%{box-shadow:0 0 0 7px rgba(14,165,233,0)}}
+.trk-node.breach{background:var(--red);border-color:var(--red);color:#fff}
+.trk-label{font-size:9px;color:var(--text-3);text-align:center;line-height:1.3}
+.trk-line{flex:1;height:2px;background:var(--border-hi);margin-top:-17px;min-width:16px}
+.trk-line.done{background:var(--green)}
+
+/* ═══ PIPELINE KANBAN ══════════════════════════════════ */
+.pipeline{display:flex;gap:0;overflow-x:auto;margin-bottom:22px}
+.pipe-col{flex:1;min-width:155px;display:flex;flex-direction:column}
+.pipe-head{
+  padding:9px 11px;background:var(--bg-card);
+  border:1px solid var(--border);border-bottom:none;
+  border-radius:var(--radius) var(--radius) 0 0;
+}
+.pipe-col:not(:first-child) .pipe-head{border-left:none;border-radius:0 var(--radius) 0 0}
+.pipe-col:first-child .pipe-head{border-radius:var(--radius) 0 0 0}
+.pipe-name{font-size:10px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.4px}
+.pipe-ct{font-size:10px;color:var(--text-3);margin-top:1px}
+.pipe-body{
+  flex:1;min-height:110px;padding:7px;
+  background:var(--bg-raised);border:1px solid var(--border);
+  border-top:none;display:flex;flex-direction:column;gap:5px;
+}
+.pipe-col:last-child  .pipe-body{border-radius:0 0 var(--radius) 0}
+.pipe-col:first-child .pipe-body{border-radius:0 0 0 var(--radius)}
+.pipe-empty{font-size:11px;color:var(--text-3);text-align:center;padding:14px 0}
+.pcase{
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:6px;padding:9px 10px;cursor:pointer;
+  transition:border-color .15s,background .15s;
+}
+.pcase:hover{border-color:var(--accent);background:var(--bg-hover)}
+.pcase.selected{border-color:var(--accent)}
+.pcase.breach-border{border-left:3px solid var(--red)}
+.pcase.warn-border  {border-left:3px solid var(--amber)}
+
+/* ═══ SLA BAR ══════════════════════════════════════════ */
+.sla-bar-wrap{margin-top:5px}
+.sla-bar-track{height:5px;background:var(--border-hi);border-radius:3px;overflow:hidden}
+.sla-bar-fill{height:100%;border-radius:3px;transition:width .6s}
+
+/* ═══ PROVIDER CHAIN ════════════════════════════════════ */
+.pchain{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:10px 0}
+.pchain-node{
+  background:var(--bg-hover);border:1px solid var(--border-hi);
+  border-radius:6px;padding:5px 11px;font-size:11px;font-weight:500;color:var(--text-2);
+}
+.pchain-arrow{font-size:12px;color:var(--text-3);font-family:'JetBrains Mono',monospace}
+
+/* ═══ TIMELINE ═════════════════════════════════════════ */
+.tl{display:flex;flex-direction:column;gap:0}
+.tl-item{display:flex;gap:11px;padding-bottom:14px}
+.tl-left{display:flex;flex-direction:column;align-items:center}
+.tl-dot{width:9px;height:9px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:4px}
+.tl-dot.done{background:var(--green)}
+.tl-line{width:2px;flex:1;background:var(--border-hi);margin:3px 0;min-height:14px}
+.tl-content{flex:1}
+.tl-title{font-size:12px;font-weight:500;color:var(--text-1)}
+.tl-ts{font-size:10px;color:var(--text-3);font-family:'JetBrains Mono',monospace}
+.tl-desc{font-size:11px;color:var(--text-2);margin-top:2px;line-height:1.6}
+
+/* ═══ TABS ══════════════════════════════════════════════ */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);padding:0 18px}
+.tab-btn{
+  padding:9px 14px;font-size:12px;font-weight:500;color:var(--text-3);
+  border-bottom:2px solid transparent;cursor:pointer;border:none;background:transparent;
+  margin-bottom:-1px;transition:color .12s;
+}
+.tab-btn:hover{color:var(--text-1)}
+.tab-btn.active{color:var(--accent-2);border-bottom-color:var(--accent-2)}
+.tab-pane{display:none;padding:18px}
+.tab-pane.active{display:block}
+
+/* ═══ OWNERSHIP / GUARDRAIL BANNERS ═══════════════════ */
+.banner{border-radius:var(--radius-sm);padding:11px 14px;margin-bottom:11px}
+.banner.pending  {background:var(--amber-bg);border:1px solid rgba(245,158,11,.28)}
+.banner.accepted {background:var(--green-bg);border:1px solid rgba(16,185,129,.25)}
+.banner.lock     {background:var(--red-bg);border:1px solid rgba(239,68,68,.25)}
+.banner.lock.ok  {background:var(--green-bg);border-color:rgba(16,185,129,.25)}
+.banner-title{font-size:12px;font-weight:600;color:var(--text-1);margin-bottom:2px}
+.banner-sub{font-size:11px;color:var(--text-2)}
+
+/* ═══ BUTTONS ══════════════════════════════════════════ */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:7px 14px;border-radius:var(--radius-sm);
+  font-size:12px;font-weight:500;border:none;cursor:pointer;
+  transition:all .12s;min-height:32px;
+}
+.btn-primary {background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-2)}
+.btn-secondary{background:var(--bg-hover);color:var(--text-2);border:1px solid var(--border-hi)}
+.btn-secondary:hover{color:var(--text-1);border-color:var(--accent)}
+.btn-danger{background:var(--red-bg);color:var(--red);border:1px solid rgba(239,68,68,.3)}
+.btn-danger:hover{background:rgba(239,68,68,.2)}
+.btn-green{background:var(--green-bg);color:var(--green);border:1px solid rgba(16,185,129,.3)}
+.btn-green:hover{background:rgba(16,185,129,.22)}
+.btn-sm{padding:4px 10px;font-size:11px;min-height:26px}
+.btn-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+
+/* ═══ FORM ELEMENTS ════════════════════════════════════ */
+.field-label{font-size:11px;font-weight:500;color:var(--text-2);margin-bottom:4px}
+.text-in{
+  width:100%;background:var(--bg-raised);border:1px solid var(--border-hi);
+  border-radius:var(--radius-sm);padding:8px 12px;color:var(--text-1);
+  font-size:12px;font-family:'JetBrains Mono',monospace;outline:none;min-height:36px;
+  transition:border-color .15s;
+}
+.text-in:focus{border-color:var(--accent)}
+.select-in{
+  width:100%;background:var(--bg-raised);border:1px solid var(--border-hi);
+  border-radius:var(--radius-sm);padding:8px 12px;color:var(--text-1);
+  font-size:12px;outline:none;min-height:36px;cursor:pointer;
+}
+.select-in option{background:var(--bg-card)}
+
+/* ═══ ANALYTICS BARS ════════════════════════════════════ */
+.bar-chart{display:flex;flex-direction:column;gap:9px}
+.bar-row{display:flex;align-items:center;gap:10px}
+.bar-label{font-size:11px;color:var(--text-2);width:160px;flex-shrink:0}
+.bar-track{flex:1;height:9px;background:var(--border-hi);border-radius:5px;overflow:hidden}
+.bar-fill{height:100%;border-radius:5px;transition:width 1.2s cubic-bezier(.4,0,.2,1)}
+.bar-val{font-size:11px;color:var(--text-2);width:36px;text-align:right;flex-shrink:0}
+
+/* ═══ PATIENT STEPS ════════════════════════════════════ */
+.pt-steps{display:flex;flex-direction:column;gap:0;padding:0 4px}
+.pt-step{display:flex;gap:14px;padding-bottom:20px}
+.pt-step-left{display:flex;flex-direction:column;align-items:center}
+.pt-num{
+  width:36px;height:36px;border-radius:50%;flex-shrink:0;
+  background:var(--bg-hover);border:2px solid var(--border-hi);
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;color:var(--text-3);
+}
+.pt-num.done  {background:var(--green);border-color:var(--green);color:#fff}
+.pt-num.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.pt-line{width:2px;flex:1;background:var(--border-hi);margin:4px 0;min-height:22px}
+.pt-line.done{background:var(--green)}
+.pt-content{flex:1;padding-top:5px}
+.pt-title{font-size:13px;font-weight:500;color:var(--text-1);margin-bottom:2px}
+.pt-desc{font-size:12px;color:var(--text-2);line-height:1.65}
+.pt-ts{font-size:10px;color:var(--text-3);font-family:'JetBrains Mono',monospace;margin-top:3px}
+
+/* ═══ BILINGUAL BLOCKS ═════════════════════════════════ */
+.bi-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.bi-side{
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:16px;
+}
+.bi-ar{direction:rtl;text-align:right}
+.bi-lang{font-size:10px;font-weight:700;color:var(--text-3);letter-spacing:.6px;text-transform:uppercase;margin-bottom:8px}
+.bi-title{font-size:15px;font-weight:700;color:var(--text-1);margin-bottom:9px}
+.bi-body{font-size:12.5px;color:var(--text-2);line-height:1.8;margin-bottom:10px}
+.bi-action{font-size:11px;color:var(--accent);font-weight:500;margin-bottom:8px}
+.bi-disc{font-size:10px;color:var(--text-3);padding-top:9px;border-top:1px solid var(--border)}
+
+/* ═══ INTEGRITY HERO ════════════════════════════════════ */
+.hero{
+  background:linear-gradient(135deg,rgba(239,68,68,.07),rgba(14,165,233,.05));
+  border:1px solid rgba(239,68,68,.18);
+  border-radius:var(--radius);padding:22px 24px;
+  margin-bottom:20px;display:flex;align-items:center;gap:22px;flex-wrap:wrap;
+}
+.hero-num{font-size:54px;font-weight:800;color:var(--red);line-height:1}
+.hero-label{font-size:15px;font-weight:600;color:var(--text-1);margin-bottom:4px}
+.hero-sub{font-size:12px;color:var(--text-2);line-height:1.6;max-width:500px}
+
+/* ═══ DISCLAIMER ════════════════════════════════════════ */
+.disclaimer{
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:10px 14px;
+  font-size:11px;color:var(--text-3);line-height:1.6;margin-bottom:16px;
+}
+.disclaimer strong{color:var(--text-2)}
+
+/* ═══ TOAST ════════════════════════════════════════════ */
+#toast{
+  position:fixed;top:62px;right:16px;z-index:500;
+  background:var(--bg-card);border:1px solid var(--border-hi);
+  border-left:3px solid var(--red);border-radius:var(--radius);
+  padding:13px 16px;max-width:320px;
+  box-shadow:0 8px 32px rgba(0,0,0,.5);
+  display:none;animation:slideIn .3s ease;
+}
+#toast.show{display:block}
+@keyframes slideIn{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+.toast-title{font-size:12px;font-weight:600;color:var(--red);margin-bottom:4px}
+.toast-body{font-size:11px;color:var(--text-2);line-height:1.6}
+.toast-close{position:absolute;top:9px;right:10px;cursor:pointer;color:var(--text-3);font-size:14px;border:none;background:transparent}
+
+/* ═══ FHIR VIEWER ══════════════════════════════════════ */
+.fhir-block{
+  background:var(--bg-raised);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:14px;
+  font-family:'JetBrains Mono',monospace;font-size:10.5px;
+  color:var(--text-2);line-height:1.75;overflow-x:auto;max-height:300px;overflow-y:auto;
+}
+
+/* ═══ CONSULT ROW ═══════════════════════════════════════ */
+.consult-row{
+  display:flex;align-items:center;gap:11px;padding:10px 13px;
+  background:var(--bg-card);border:1px solid var(--border);
+  border-radius:var(--radius-sm);margin-bottom:8px;
+}
+.c-avatar{
+  width:36px;height:36px;border-radius:9px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--accent),var(--purple));
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;color:#fff;
+}
+.c-name{font-size:12px;font-weight:500;color:var(--text-1)}
+.c-role{font-size:10px;color:var(--text-3)}
+.c-sla{font-size:10px;font-family:'JetBrains Mono',monospace;margin-left:auto}
+
+/* ═══ AI RESPONSE BLOCK ════════════════════════════════ */
+.ai-block{
+  background:var(--accent-bg);border:1px solid rgba(14,165,233,.2);
+  border-radius:var(--radius);padding:14px;margin-top:12px;
+}
+.ai-label{font-size:10px;font-weight:700;color:var(--accent-2);letter-spacing:.5px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.ai-text{font-size:12px;color:var(--text-2);line-height:1.8}
+.ai-loading{display:flex;gap:5px;align-items:center;padding:4px 0}
+.ai-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:bounce 1.2s infinite}
+.ai-dot:nth-child(2){animation-delay:.2s}
+.ai-dot:nth-child(3){animation-delay:.4s}
+@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+
+/* ═══ PROGRESS RING ════════════════════════════════════ */
+.ring-wrap{position:relative;width:60px;height:60px;flex-shrink:0}
+.ring-wrap svg{transform:rotate(-90deg)}
+.ring-label{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  font-size:11px;font-weight:700;text-align:center;line-height:1.2;
+}
+
+/* ═══ ANALYTICS GRID ════════════════════════════════════ */
+.analytics-2col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+
+/* ═══ RESPONSIVE ════════════════════════════════════════ */
+@media(max-width:1100px){#agent-panel{width:220px;min-width:220px}}
+@media(max-width:900px){
+  #sidebar{width:46px;min-width:46px}
+  #sidebar .sb-label,#sidebar .sb-item span:not(.badge),
+  #sidebar .sb-footer .sb-stat .sk,#sidebar .sb-footer .sb-stat .sv{display:none}
+  #agent-panel{width:200px;min-width:200px}
+  .kpi-grid{grid-template-columns:1fr 1fr}
+  .bi-grid{grid-template-columns:1fr}
+  .analytics-2col{grid-template-columns:1fr}
+}
+@media(max-width:650px){
+  #agent-panel{display:none}
+  .nav-tabs{display:none}
+  .kpi-grid{grid-template-columns:1fr}
+  .pipeline{display:none}
+  .bi-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- TOAST -->
+<div id="toast">
+  <button class="toast-close" onclick="closeToast()">x</button>
+  <div class="toast-title">Clinical Guardrail Triggered</div>
+  <div class="toast-body" id="toastMsg"></div>
+</div>
+
+<!-- TOPBAR -->
+<div id="topbar">
+  <div class="top-logo">Zero<span>Drop</span></div>
+  <div class="status-pill">
+    <div class="status-dot"></div>
+    Malaffi FHIR v4 &middot; Simulated &middot; ADHICS Aligned
+  </div>
+  <div class="top-spacer"></div>
+  <div class="nav-tabs">
+    <button class="nav-btn active" onclick="switchView('ops',this)">System Ops</button>
+    <button class="nav-btn" onclick="switchView('clinical',this)">Clinical Inbox</button>
+    <button class="nav-btn" onclick="switchView('patient',this)">Patient Portal</button>
+    <button class="nav-btn" onclick="switchView('analytics',this)">Analytics</button>
+  </div>
+  <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn" title="Toggle theme">&#9790;</button>
+</div>
+
+<!-- SHELL -->
+<div id="shell">
+
+<!-- ══ SIDEBAR ═══════════════════════════════════════════ -->
+<div id="sidebar">
+  <div class="sb-section">
+    <div class="sb-label">Cases</div>
+    <button class="sb-item active" onclick="selectCase(0);switchView('ops',null)">
+      <span>ZD-901</span><span class="badge badge-amber">SLA</span>
+    </button>
+    <button class="sb-item" onclick="selectCase(1);switchView('ops',null)">
+      <span>ZD-902</span><span class="badge badge-red">!</span>
+    </button>
+    <button class="sb-item" onclick="selectCase(2);switchView('ops',null)">
+      <span>ZD-903</span><span class="badge badge-green">OK</span>
+    </button>
+    <button class="sb-item" onclick="selectCase(3);switchView('ops',null)">
+      <span>ZD-904</span><span class="badge badge-amber">!</span>
+    </button>
+  </div>
+  <div class="sb-divider"></div>
+  <div class="sb-section">
+    <div class="sb-label">Views</div>
+    <button class="sb-item" onclick="switchView('ops',this)"><span>Ops Center</span></button>
+    <button class="sb-item" onclick="switchView('clinical',this)"><span>Clinical Inbox</span></button>
+    <button class="sb-item" onclick="switchView('patient',this)"><span>Patient Portal</span></button>
+    <button class="sb-item" onclick="switchView('analytics',this)"><span>Analytics</span></button>
+  </div>
+  <div class="sb-footer">
+    <div class="sb-stat"><span class="sk">Open</span><span class="sv" id="sb-open">4</span></div>
+    <div class="sb-stat"><span class="sk">Breaches</span><span class="sv" style="color:var(--red)" id="sb-breach">2</span></div>
+    <div class="sb-stat"><span class="sk">Closed today</span><span class="sv" style="color:var(--green)" id="sb-closed">0</span></div>
+  </div>
+</div>
+
+<!-- ══ MAIN ══════════════════════════════════════════════ -->
+<div id="main">
+
+<div class="disclaimer">
+  <strong>Operational Tool Only:</strong> ZeroDrop is a workflow orchestration and SLA tracking engine — not a Software as a Medical Device (SaMD). All clinical decisions remain with licensed healthcare professionals. Patient identifiers are tokenised. Designed for alignment with UAE PDPL Decree-Law No. 45/2021 and ADHICS. All Malaffi integrations are simulated.
+</div>
+
+<!-- ═══════════════ SYSTEM OPS VIEW ═══════════════════ -->
+<div class="view active" id="view-ops">
+
+  <div class="page-title">System Ops Center</div>
+  <div class="page-sub">End-to-end pipeline &middot; SLA monitoring &middot; Deterministic agentic routing</div>
+
+  <div class="hero">
+    <div class="hero-num" id="heroNum">4</div>
+    <div>
+      <div class="hero-label">Active results awaiting loop closure</div>
+      <div class="hero-sub">Each open case is an actionable screening result with no verified closure. Loop integrity requires every result to reach CLOSED &amp; VERIFIED with an evidence bundle on record.</div>
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn btn-primary" onclick="runAgentScan()">Run Agent Scan</button>
+        <button class="btn btn-secondary" onclick="simulateRejection()">Simulate Rejection</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi"><div class="kpi-label">Mean Time to Notify</div><div class="kpi-val" style="color:var(--accent)">4.2h</div><div class="kpi-delta up">↓ 38% vs baseline</div></div>
+    <div class="kpi"><div class="kpi-label">Referral Conversion</div><div class="kpi-val" style="color:var(--green)">81%</div><div class="kpi-delta up">↑ 14pp vs baseline</div></div>
+    <div class="kpi"><div class="kpi-label">SLA Breach Rate</div><div class="kpi-val" style="color:var(--amber)" id="kpi-breach">11%</div><div class="kpi-delta down">↑ 2pp (amber)</div></div>
+    <div class="kpi"><div class="kpi-label">Agent Re-routes</div><div class="kpi-val" style="color:var(--green)">24</div><div class="kpi-delta up">drop-offs prevented</div></div>
+    <div class="kpi"><div class="kpi-label">Unverified Closures</div><div class="kpi-val" style="color:var(--green)">0</div><div class="kpi-delta up">closure lock enforced</div></div>
+    <div class="kpi"><div class="kpi-label">Patient Reassurance Index</div><div class="kpi-val" style="color:var(--green)">4.6<span style="font-size:14px;font-weight:400">/5</span></div><div class="kpi-delta up">↑ 0.4 this month</div></div>
+  </div>
+
+  <div class="section-label">Pipeline — Cases by Stage</div>
+  <div class="pipeline" id="pipelineView"></div>
+
+  <div class="section-label">Case Inspector</div>
+  <div id="caseDetailArea"></div>
+
+</div>
+
+<!-- ═══════════════ CLINICAL INBOX VIEW ═══════════════ -->
+<div class="view" id="view-clinical">
+  <div class="page-title">Clinical Inbox</div>
+  <div class="page-sub">High-priority and SLA-critical cases requiring physician action only</div>
+  <div id="clinicalInbox"></div>
+</div>
+
+<!-- ═══════════════ PATIENT PORTAL VIEW ═══════════════ -->
+<div class="view" id="view-patient">
+  <div style="max-width:600px;margin:0 auto">
+    <div class="page-title" style="text-align:center">Your Care Status</div>
+    <div class="page-sub" style="text-align:center">Abu Dhabi Health Services &middot; Secure Patient Portal</div>
+    <div class="disclaimer" style="text-align:center;margin-bottom:16px">
+      This portal gives you information about your result and next steps.<br>Your doctor makes all medical decisions. No diagnosis is made here.
+    </div>
+    <div id="patientLookup">
+      <div class="card" style="text-align:center;padding:28px">
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">Enter your secure access token</div>
+        <div style="font-size:11px;color:var(--text-3);margin-bottom:16px">You received this in your notification message</div>
+        <input class="text-in" id="ptTokenInput" placeholder="e.g. PT-7731-A" style="margin-bottom:10px;text-align:center">
+        <div style="font-size:10px;color:var(--text-3);margin-bottom:14px">Demo tokens: PT-7731-A &nbsp;&middot;&nbsp; PT-9942-B &nbsp;&middot;&nbsp; PT-5513-C &nbsp;&middot;&nbsp; PT-2287-D</div>
+        <button class="btn btn-primary" onclick="patientLookup()" style="width:100%;justify-content:center">Access My Results</button>
+      </div>
+    </div>
+    <div id="patientView" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ═══════════════ ANALYTICS VIEW ════════════════════ -->
+<div class="view" id="view-analytics">
+  <div class="page-title">Analytics &amp; Impact Dashboard</div>
+  <div class="page-sub">Synthetic cohort &middot; Baseline vs ZeroDrop &middot; False-alarm rates reported honestly</div>
+
+  <div class="kpi-grid" style="margin-bottom:22px">
+    <div class="kpi"><div class="kpi-label">Time to Notify — Baseline</div><div class="kpi-val" style="color:var(--red)">6.8h</div><div class="kpi-delta">Before ZeroDrop</div></div>
+    <div class="kpi"><div class="kpi-label">Time to Notify — ZeroDrop</div><div class="kpi-val" style="color:var(--green)">4.2h</div><div class="kpi-delta up">↓ 38%</div></div>
+    <div class="kpi"><div class="kpi-label">False Positive Escalations</div><div class="kpi-val" style="color:var(--amber)">3.2%</div><div class="kpi-delta">Threshold: 95%</div></div>
+    <div class="kpi"><div class="kpi-label">Referral Completion</div><div class="kpi-val" style="color:var(--green)">81%<span style="font-size:14px;font-weight:400;color:var(--text-3)"> / 67%</span></div><div class="kpi-delta up">vs 67% baseline</div></div>
+  </div>
+
+  <div class="analytics-2col">
+    <div class="card">
+      <div class="section-label">Time to Notification by Pathway (hours)</div>
+      <div class="bar-chart">
+        <div class="bar-row"><div class="bar-label">Beta-Thalassemia</div><div class="bar-track"><div class="bar-fill" style="width:50%;background:var(--accent)"></div></div><div class="bar-val">3.1h</div></div>
+        <div class="bar-row"><div class="bar-label">BRCA1 Mammography</div><div class="bar-track"><div class="bar-fill" style="width:68%;background:var(--accent)"></div></div><div class="bar-val">4.8h</div></div>
+        <div class="bar-row"><div class="bar-label">Newborn Metabolic</div><div class="bar-track"><div class="bar-fill" style="width:30%;background:var(--green)"></div></div><div class="bar-val">1.9h</div></div>
+        <div class="bar-row"><div class="bar-label">Cardiovascular Risk</div><div class="bar-track"><div class="bar-fill" style="width:80%;background:var(--amber)"></div></div><div class="bar-val">5.5h</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-label">Referral Conversion by Provider</div>
+      <div class="bar-chart">
+        <div class="bar-row"><div class="bar-label">CCAD Genomics</div><div class="bar-track"><div class="bar-fill" style="width:92%;background:var(--green)"></div></div><div class="bar-val">92%</div></div>
+        <div class="bar-row"><div class="bar-label">Mubadala Health</div><div class="bar-track"><div class="bar-fill" style="width:85%;background:var(--green)"></div></div><div class="bar-val">85%</div></div>
+        <div class="bar-row"><div class="bar-label">SEHA Clinics</div><div class="bar-track"><div class="bar-fill" style="width:74%;background:var(--accent)"></div></div><div class="bar-val">74%</div></div>
+        <div class="bar-row"><div class="bar-label">Private Network</div><div class="bar-track"><div class="bar-fill" style="width:61%;background:var(--amber)"></div></div><div class="bar-val">61%</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-label">Model Calibration Report</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+        <div class="card-sm"><div style="font-size:10px;color:var(--text-3)">Sensitivity</div><div style="font-size:16px;font-weight:700;color:var(--green)">94.1%</div></div>
+        <div class="card-sm"><div style="font-size:10px;color:var(--text-3)">Specificity</div><div style="font-size:16px;font-weight:700;color:var(--green)">91.3%</div></div>
+        <div class="card-sm"><div style="font-size:10px;color:var(--text-3)">False Alarm Rate</div><div style="font-size:16px;font-weight:700;color:var(--amber)">3.2%</div></div>
+        <div class="card-sm"><div style="font-size:10px;color:var(--text-3)">Alert Fatigue Index</div><div style="font-size:16px;font-weight:700;color:var(--green)">Low</div></div>
+        <div class="card-sm"><div style="font-size:10px;color:var(--text-3)">Data Latency</div><div style="font-size:16px;font-weight:700">&lt; 90s</div></div>
+        <div class="card-sm"><div style="font-size:10px;color:var(--text-3)">Missing Data</div><div style="font-size:16px;font-weight:700;color:var(--green)">Flagged</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-label">Equitable Reach — Language Groups</div>
+      <div class="bar-chart">
+        <div class="bar-row"><div class="bar-label">Arabic</div><div class="bar-track"><div class="bar-fill" style="width:88%;background:var(--green)"></div></div><div class="bar-val">88%</div></div>
+        <div class="bar-row"><div class="bar-label">English</div><div class="bar-track"><div class="bar-fill" style="width:91%;background:var(--green)"></div></div><div class="bar-val">91%</div></div>
+        <div class="bar-row"><div class="bar-label">Urdu</div><div class="bar-track"><div class="bar-fill" style="width:79%;background:var(--accent)"></div></div><div class="bar-val">79%</div></div>
+        <div class="bar-row"><div class="bar-label">Hindi</div><div class="bar-track"><div class="bar-fill" style="width:76%;background:var(--accent)"></div></div><div class="bar-val">76%</div></div>
+        <div class="bar-row"><div class="bar-label">Tagalog</div><div class="bar-track"><div class="bar-fill" style="width:71%;background:var(--amber)"></div></div><div class="bar-val">71%</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:4px">
+    <div class="section-label">Drop-off Root Causes — This Month</div>
+    <div class="bar-chart">
+      <div class="bar-row"><div class="bar-label">No appointment booked</div><div class="bar-track"><div class="bar-fill" style="width:72%;background:var(--red)"></div></div><div class="bar-val">72%</div></div>
+      <div class="bar-row"><div class="bar-label">Referral rejected</div><div class="bar-track"><div class="bar-fill" style="width:48%;background:var(--amber)"></div></div><div class="bar-val">48%</div></div>
+      <div class="bar-row"><div class="bar-label">Patient unreachable</div><div class="bar-track"><div class="bar-fill" style="width:35%;background:var(--accent)"></div></div><div class="bar-val">35%</div></div>
+      <div class="bar-row"><div class="bar-label">Wrong specialty</div><div class="bar-track"><div class="bar-fill" style="width:22%;background:var(--purple)"></div></div><div class="bar-val">22%</div></div>
+      <div class="bar-row"><div class="bar-label">Owner unassigned</div><div class="bar-track"><div class="bar-fill" style="width:18%;background:var(--green)"></div></div><div class="bar-val">18%</div></div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /main -->
+
+<!-- ══ AGENT PANEL ════════════════════════════════════════ -->
+<div id="agent-panel">
+  <div class="ap-header">
+    <div class="ap-pulse"></div>
+    <div>
+      <div class="ap-title">Agent Telemetry</div>
+      <div class="ap-sub">Deterministic Watchdog v3.1</div>
+    </div>
+  </div>
+  <div id="agent-log"></div>
+  <div class="ap-controls">
+    <button class="ap-btn primary" onclick="runAgentScan()">Run Full Agent Scan</button>
+    <button class="ap-btn" onclick="triggerSLABreach()">Trigger SLA Breach Alert</button>
+    <button class="ap-btn" onclick="simulateRejection()">Simulate Provider Rejection</button>
+  </div>
+</div>
+
+</div><!-- /shell -->
+
+<script>
+'use strict';
+
+const API_URL = 'https://zerodrop-api-xxxx.onrender.com';
+
+const STAGES = ['ISSUED','PATIENT_NOTIFIED','OFFLINE_FALLBACK','PATIENT_ACKNOWLEDGED','CLINICIAN_CONSULT','REFERRAL_ACCEPTED','CLOSED_VERIFIED'];
+const STAGE_LABELS = ['Result Issued','Patient Notified','Call Center Escalation','Acknowledged','Clinician Consult','Referral Accepted','Closed & Verified'];
+const STAGE_OWNERS = ['Lab Director','Patient Navigator','Call Centre Coordinator','Patient','Primary Physician','Specialist Coordinator','Case Owner'];
+
+let CASES = [];
+let FHIR_PAYLOADS = {};
+let BILINGUAL = {};
+let selectedCase = 0;
+let isDark = true;
+
+// ═══════════════════════════════════════
+//  API INTEGRATION (The "Mind" Backend)
+// ═══════════════════════════════════════
+
+async function fetchCases() {
+    try {
+        const res = await fetch(`${API_URL}/cases`);
+        if (!res.ok) throw new Error("Network response was not ok");
+        CASES = await res.json();
+        
+        // Populate local caches from backend
+        CASES.forEach(c => {
+            if (c.fhir_payload) FHIR_PAYLOADS[c.id] = c.fhir_payload;
+            if (c.bilingual) BILINGUAL[c.id] = c.bilingual;
+        });
+
+        renderAll();
+    } catch (e) {
+        showToast("Error connecting to ZeroDrop API. Ensure FastAPI is running on port 8000.");
+    }
+}
+
+async function acceptOwnership() {
+    const c = CASES[selectedCase];
+    try {
+        await fetch(`${API_URL}/cases/${c.id}/accept_ownership`, {method: 'POST'});
+        log('success', `AGENT-OWN: ${c.id} · Ownership accepted. Audit created.`);
+        await fetchCases();
+    } catch (e) { showToast("API Error: Cannot accept ownership."); }
+}
+
+async function acceptOwnershipForCase(idx) {
+    const c = CASES[idx];
+    try {
+        await fetch(`${API_URL}/cases/${c.id}/accept_ownership`, {method: 'POST'});
+        log('success', `AGENT-OWN: ${c.id} · Clinical ownership accepted.`);
+        await fetchCases();
+    } catch (e) { showToast("API Error."); }
+}
+
+async function advanceStage() {
+    const c = CASES[selectedCase];
+    if(!c.owner_accepted){showToast('Ownership has not been accepted. A named clinician must accept responsibility.');return;}
+    if(c.stage>=5){showToast('Case is at or beyond Referral Accepted. Use the Closure Lock tab.');return;}
+    
+    // If it's an offline patient, require the specific resolution endpoint
+    if(c.stage === 2 && c.is_offline_patient) {
+        try {
+            await fetch(`${API_URL}/cases/${c.id}/resolve_offline_fallback`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({coordinator: 'Current User'})
+            });
+            log('success', `AGENT-OFFLINE: ${c.id} · Verbal acknowledgement confirmed.`);
+            await fetchCases();
+        } catch (e) { showToast("API Error resolving offline fallback."); }
+        return;
+    }
+
+    try {
+        await fetch(`${API_URL}/cases/${c.id}/advance`, {method: 'POST'});
+        log('action', `AGENT-STAGE: ${c.id} advanced to next stage.`);
+        await fetchCases();
+    } catch (e) { showToast("API Error advancing stage."); }
+}
+
+async function attemptClosure() {
+    const c = CASES[selectedCase];
+    const token = (e('closureTokenInput')||{}).value||'';
+    const evidence = (e('closureEvidenceSelect')||{}).value||'';
+    
+    if(!token.trim().startsWith('MALAFFI-CONF-') || !evidence || evidence === '— Select closure evidence type —'){
+        showToast('Closure blocked: Both a valid Malaffi token (MALAFFI-CONF-XXXX) and evidence type are required.');
+        return;
+    }
+    
+    try {
+        await fetch(`${API_URL}/cases/${c.id}/close`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({token: token, evidence: evidence})
+        });
+        log('success', `AGENT-CLOSE: ${c.id} → CLOSED_VERIFIED · Audit entry created`);
+        await fetchCases();
+    } catch (e) { showToast("API Error closing case."); }
+}
+
+async function patientAcknowledge(caseId) {
+    try {
+        await fetch(`${API_URL}/cases/${caseId}/patient_acknowledge`, {method: 'POST'});
+        log('success', `AGENT-STAGE: ${caseId} → Patient acknowledged via secure portal`);
+        await fetchCases();
+        
+        const c = CASES.find(x => x.id === caseId);
+        if(c) renderPatientView(c);
+    } catch (e) { showToast("API Error."); }
+}
+
+async function runAgentScan() {
+    log('info','AGENT-SCAN: Full system scan initiated — checking SLA, ownership, acknowledgements...');
+    try {
+        const res = await fetch(`${API_URL}/agent/scan`, {method: 'POST'});
+        const data = await res.json();
+        
+        data.alerts.forEach(a => {
+            log(a.level, `AGENT-SCAN: ${a.msg}`);
+        });
+        log('success',`AGENT-SCAN: Scan complete — ${data.unverified_closures} unverified closures — ${data.audit}`);
+        if(e('heroNum')) e('heroNum').textContent = data.open_cases;
+    } catch (e) { showToast("API Error during Agent Scan."); }
+}
+
+async function simulateRejection() {
+    const caseId = 'ZD-902'; 
+    try {
+        log('warn',`AGENT-DROP: Referral for ${caseId} rejected by CCAD Oncology (capacity). Re-routing...`);
+        setTimeout(async () => {
+            await fetch(`${API_URL}/agent/simulate_rejection/${caseId}`, {method: 'POST'});
+            log('action',`AGENT-REROUTE: ${caseId} → Mubadala Oncology Centre · Accepted · SLA reset`);
+            log('success','AGENT-REROUTE: Drop-off prevented. Referral conversion preserved.');
+            showToast(`Provider Rejection Intercepted: ${caseId} was re-routed. SLA reset.`);
+            await fetchCases();
+        }, 1200);
+    } catch (e) { showToast("API Error."); }
+}
+
+async function triggerSLABreach() {
+    const c = CASES[selectedCase];
+    try {
+        await fetch(`${API_URL}/agent/trigger_sla_breach/${c.id}`, {method: 'POST'});
+        log('error',`AGENT-SLA: BREACH · ${c.id} · On-call clinician notified`);
+        await fetchCases();
+    } catch (e) { showToast("API Error."); }
+}
+
+// ═══════════════════════════════════════
+//  HELPERS & UI RENDERING
+// ═══════════════════════════════════════
+
+function slaFraction(c){ return Math.max(0,Math.min(1,c.sla_remaining/c.sla_total)); }
+function slaStatus(c){
+    const f=slaFraction(c);
+    if(f<0.15)return'BREACH';
+    if(f<0.35)return'WARNING';
+    return'OK';
+}
+function slaDisplay(c){
+    const m=c.sla_remaining;
+    if(m<=0)return'OVERDUE';
+    if(m>=60){const h=Math.floor(m/60);const r=m%60;return r?`${h}h ${r}m`:`${h}h`}
+    return`${m}m`;
+}
+function slaColour(c){
+    const s=slaStatus(c);
+    return s==='BREACH'?'var(--red)':s==='WARNING'?'var(--amber)':'var(--green)';
+}
+function priorityTagClass(p){ return p==='CRITICAL'?'tag-critical':p==='HIGH'?'tag-high':'tag-normal'; }
+function slaTagClass(c){ const s=slaStatus(c); return s==='BREACH'?'tag-breach':s==='WARNING'?'tag-warn':'tag-ok'; }
+function e(id){return document.getElementById(id)}
+function escHTML(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function log(level,msg){
+    const ts=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+    const div=document.createElement('div');
+    div.className=`log-line ${level}`;
+    div.innerHTML=`<span class="log-ts">[${ts}]</span> ${escHTML(msg)}`;
+    const logEl=e('agent-log');
+    if(logEl) { logEl.appendChild(div); logEl.scrollTop=logEl.scrollHeight; }
+}
+
+function showToast(msg){ e('toastMsg').textContent=msg; e('toast').classList.add('show'); clearTimeout(window._toastTimer); window._toastTimer=setTimeout(closeToast,7000); }
+function closeToast(){e('toast').classList.remove('show')}
+
+function toggleTheme(){
+    isDark=!isDark;
+    document.body.classList.toggle('light',!isDark);
+    if(e('themeBtn')) e('themeBtn').innerHTML=isDark?'&#9790;':'&#9728;';
+}
+
+function switchView(name,btn){
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    const target = e('view-'+name);
+    if(target) target.classList.add('active');
+    
+    document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+    if(btn) { btn.classList.add('active'); }
+    else {
+        const map={'ops':0,'clinical':1,'patient':2,'analytics':3};
+        const tabs = document.querySelectorAll('.nav-btn');
+        if(tabs[map[name]||0]) tabs[map[name]||0].classList.add('active');
+    }
+}
+
+function trackerHTML(c){
+    let h='<div class="tracker">';
+    STAGES.forEach((s,i)=>{
+        const done=i<c.stage,active=i===c.stage;
+        const nodeCls=done?'done':active?'active':'';
+        const inner=done?'&#10003;':(i+1);
+        const lineCls=i>0&&i<=c.stage?'done':'';
+        h+=i>0?`<div class="trk-line ${lineCls}"></div>`:'';
+        h+=`<div class="trk-step"><div class="trk-node ${nodeCls}">${inner}</div><div class="trk-label">${STAGE_LABELS[i].replace(' ','<br>')}</div></div>`;
+    });
+    return h+'</div>';
+}
+
+function slaBarHTML(c){
+    const pct=Math.round(slaFraction(c)*100);
+    const col=slaColour(c);
+    return`<div class="sla-bar-wrap">
+      <div style="font-size:11px;color:${col};font-family:'JetBrains Mono',monospace;margin-bottom:4px;">
+        SLA: ${slaDisplay(c)} remaining &nbsp; <span class="tag ${slaTagClass(c)}">${slaStatus(c)}</span>
+      </div>
+      <div class="sla-bar-track"><div class="sla-bar-fill" style="width:${pct}%;background:${col}"></div></div>
+    </div>`;
+}
+
+function providerChainHTML(c){
+    let h='<div class="pchain">';
+    (c.provider_chain || []).forEach((p,i)=>{
+        if(i>0)h+='<div class="pchain-arrow">&#8594;</div>';
+        h+=`<div class="pchain-node">${escHTML(p)}</div>`;
+    });
+    return h+'</div>';
+}
+
+function timelineHTML(c){
+    if(!c.timeline || !c.timeline.length)return'<p style="color:var(--text-3);font-size:12px">No events yet.</p>';
+    let h='<div class="tl">';
+    c.timeline.forEach((ev,i)=>{
+        const isLast=i===c.timeline.length-1;
+        h+=`<div class="tl-item">
+          <div class="tl-left">
+            <div class="tl-dot done"></div>
+            ${isLast?'':'<div class="tl-line"></div>'}
+          </div>
+          <div class="tl-content">
+            <div class="tl-title">${escHTML(STAGE_LABELS[ev.stage])}</div>
+            <div class="tl-ts">${escHTML(ev.ts)} &nbsp;&middot;&nbsp; ${escHTML(ev.actor)}</div>
+            <div class="tl-desc">${escHTML(ev.desc)}</div>
+          </div>
+        </div>`;
+    });
+    return h+'</div>';
+}
+
+function renderPipeline(){
+    const wrap=e('pipelineView');
+    if(!wrap) return;
+    wrap.innerHTML='';
+    STAGES.forEach((s,si)=>{
+        const stageCases=CASES.filter(c=>c.stage===si);
+        const col=document.createElement('div');
+        col.className='pipe-col';
+        let cards='';
+        if(!stageCases.length){
+            cards='<div class="pipe-empty">—</div>';
+        } else {
+            stageCases.forEach(c=>{
+                const slaSt=slaStatus(c);
+                const borderCls=slaSt==='BREACH'?'breach-border':slaSt==='WARNING'?'warn-border':'';
+                const selCls=CASES.indexOf(c)===selectedCase?'selected':'';
+                cards+=`<div class="pcase ${borderCls} ${selCls}" onclick="selectCase(${CASES.indexOf(c)})">
+                  <div class="case-id-mono">${escHTML(c.id)}</div>
+                  <div style="font-size:11.5px;font-weight:500;margin:3px 0;line-height:1.3">${escHTML(c.condition.substring(0,45))}</div>
+                  <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+                    <span class="tag ${priorityTagClass(c.priority)}">${escHTML(c.priority)}</span>
+                    <span style="font-size:10px;color:${slaColour(c)};font-family:'JetBrains Mono',monospace">${slaDisplay(c)}</span>
+                  </div>
+                  <div style="font-size:10px;color:var(--text-3);margin-top:3px">${escHTML(c.owner)}</div>
+                </div>`;
+            });
+        }
+        col.innerHTML=`
+          <div class="pipe-head">
+            <div class="pipe-name">${escHTML(STAGE_LABELS[si])}</div>
+            <div class="pipe-ct">${stageCases.length} case${stageCases.length!==1?'s':''}</div>
+          </div>
+          <div class="pipe-body">${cards}</div>`;
+        wrap.appendChild(col);
+    });
+}
+
+function renderCaseDetail(){
+    if(!CASES || CASES.length === 0) return;
+    const c=CASES[selectedCase];
+    if(!c) return;
+    const area=e('caseDetailArea');
+    if(!area) return;
+
+    const ownBannerCls=c.owner_accepted?'accepted':'pending';
+    const ownText=c.owner_accepted
+      ?`<strong>Ownership Accepted</strong> — ${escHTML(c.owner)}`
+      :`<strong>Ownership Pending</strong> — Assigned to ${escHTML(c.owner)}. Acceptance required before case can advance.`;
+    const ownBtn=c.owner_accepted?'':`<button class="btn btn-green btn-sm" onclick="acceptOwnership()" style="margin-top:8px">Accept Ownership</button>`;
+
+    const closeable=c.stage>=5&&c.stage<6; 
+    const closureLockHTML=buildClosureLock(c,closeable);
+    const fhirJSON=JSON.stringify(FHIR_PAYLOADS[c.id]||{},null,2);
+
+    const advanceBtnHTML = c.stage < 6 
+        ? (c.stage === 2 && c.is_offline_patient 
+            ? `<button class="btn btn-primary btn-sm" onclick="advanceStage()" style="margin-top:12px">Confirm Verbal Acknowledgement &rarr;</button>`
+            : `<button class="btn btn-primary btn-sm" onclick="advanceStage()" style="margin-top:12px">Advance to Next Stage &rarr;</button>`)
+        : '';
+
+    area.innerHTML=`
+    <div class="card" style="padding:0;overflow:hidden">
+      <div style="padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
+        <div style="flex:1">
+          <div class="case-id-mono">${escHTML(c.id)} &nbsp;&middot;&nbsp; ${escHTML(c.eid)} &nbsp;&middot;&nbsp; FHIR: ${escHTML(c.fhir_id)}</div>
+          <div style="font-size:17px;font-weight:700;margin:4px 0">${escHTML(c.condition)}</div>
+          <div style="font-size:12px;color:var(--text-2)">${escHTML(c.pathway)}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+          <span class="tag ${priorityTagClass(c.priority)}" style="font-size:11px;padding:4px 11px">${escHTML(c.priority)}</span>
+          <span style="font-size:12px;color:${slaColour(c)};font-family:'JetBrains Mono',monospace">SLA: ${slaDisplay(c)}</span>
+          <span style="font-size:11px;color:var(--text-3)">${escHTML(c.owner)}</span>
+        </div>
+      </div>
+      <div style="padding:4px 20px 10px">
+        ${trackerHTML(c)}
+      </div>
+      <div style="padding:0 20px 10px;border-bottom:1px solid var(--border)">
+        <div class="section-label">Malaffi Provider Chain (Simulated)</div>
+        ${providerChainHTML(c)}
+      </div>
+      <div style="padding:12px 20px;border-bottom:1px solid var(--border)">
+        ${slaBarHTML(c)}
+      </div>
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('tl',this)">Timeline</button>
+        <button class="tab-btn" onclick="switchTab('comms',this)">Patient Comms</button>
+        <button class="tab-btn" onclick="switchTab('own',this)">Ownership</button>
+        <button class="tab-btn" onclick="switchTab('close',this)">Closure Lock</button>
+        <button class="tab-btn" onclick="switchTab('fhir',this)">FHIR Payload</button>
+      </div>
+
+      <div class="tab-pane active" id="tab-tl">
+        ${timelineHTML(c)}
+        ${advanceBtnHTML}
+      </div>
+
+      <div class="tab-pane" id="tab-comms">
+        <div style="font-size:12px;color:var(--text-2);margin-bottom:12px;line-height:1.7">
+          Pre-validated bilingual notifications. Zero hallucination: templates are deterministic, clinically reviewed, and culturally appropriate.
+        </div>
+        ${bilingualHTML(c)}
+        <div id="aiResponseArea"></div>
+        <button class="btn btn-secondary btn-sm" onclick="generateAIMsg()">Generate AI-Tailored Message</button>
+      </div>
+
+      <div class="tab-pane" id="tab-own">
+        <div class="banner ${ownBannerCls}">
+          <div class="banner-title">${c.owner_accepted?'Ownership Accepted':'Ownership Pending Acceptance'}</div>
+          <div class="banner-sub">${ownText}</div>
+        </div>
+        ${ownBtn}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px">
+          <div class="card-sm"><div class="section-label">Current Owner</div><div style="font-size:13px;font-weight:500">${escHTML(c.owner)}</div></div>
+          <div class="card-sm"><div class="section-label">Stage Owner Role</div><div style="font-size:13px;font-weight:500">${escHTML(STAGE_OWNERS[c.stage])}</div></div>
+        </div>
+      </div>
+
+      <div class="tab-pane" id="tab-close">
+        ${closureLockHTML}
+      </div>
+
+      <div class="tab-pane" id="tab-fhir">
+        <div class="section-label">FHIR R4 Payload</div>
+        <div class="fhir-block">${escHTML(fhirJSON)}</div>
+      </div>
+    </div>`;
+}
+
+function switchTab(name,btn){
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    const pane=e('tab-'+name);
+    if(pane)pane.classList.add('active');
+}
+
+function bilingualHTML(c){
+    const m=BILINGUAL[c.id]||{en:{title:'',body:'',action:'',disc:''},ar:{title:'',body:'',action:'',disc:''}};
+    const en=m.en, ar=m.ar;
+    return`<div class="bi-grid">
+      <div class="bi-side">
+        <div class="bi-lang">English</div>
+        <div class="bi-title">${escHTML(en.title)}</div>
+        <div class="bi-body">${escHTML(en.body)}</div>
+        <div class="bi-action">${escHTML(en.action)}</div>
+        <div class="bi-disc">${escHTML(en.disc)}</div>
+      </div>
+      <div class="bi-side bi-ar">
+        <div class="bi-lang">&#1593;&#1585;&#1576;&#1610;</div>
+        <div class="bi-title">${escHTML(ar.title)}</div>
+        <div class="bi-body">${escHTML(ar.body)}</div>
+        <div class="bi-action">${escHTML(ar.action)}</div>
+        <div class="bi-disc">${escHTML(ar.disc)}</div>
+      </div>
+    </div>`;
+}
+
+const CLOSURE_OPTS = [
+  '— Select closure evidence type —',
+  'Confirmatory laboratory result attached',
+  'Specialist appointment attended and documented',
+  'Clinician discharge summary uploaded to Malaffi',
+  'Patient declined — informed refusal on record',
+  'Referred to specialist — case formally transferred',
+];
+
+function buildClosureLock(c,closeable){
+    if(c.stage===6){
+      return`<div class="banner accepted">
+        <div class="banner-title">Case Verified Closed</div>
+        <div class="banner-sub">Token: <code>${escHTML(c.closure_token)}</code> &nbsp;&middot;&nbsp; Evidence: ${escHTML(c.closure_evidence)}</div>
+      </div>`;
+    }
+    if(!closeable){
+      return`<div class="banner lock">
+        <div class="banner-title">Closure Not Permitted Yet</div>
+        <div class="banner-sub">Case must reach <strong>Referral Accepted</strong> before closure. Current: <strong>${STAGE_LABELS[c.stage]}</strong></div>
+      </div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:8px;line-height:1.6">The closure lock cannot be bypassed.</div>`;
+    }
+    const opts=CLOSURE_OPTS.map(o=>`<option>${escHTML(o)}</option>`).join('');
+    return`
+    <div style="margin-bottom:10px">
+      <div class="field-label">Malaffi Confirmation Token</div>
+      <input class="text-in" id="closureTokenInput" placeholder="MALAFFI-CONF-XXXX">
+    </div>
+    <div style="margin-bottom:12px">
+      <div class="field-label">Closure Evidence Type</div>
+      <select class="select-in" id="closureEvidenceSelect">${opts}</select>
+    </div>
+    <button class="btn btn-green" onclick="attemptClosure()">Close Case</button>`;
+}
+
+function selectCase(idx){
+    selectedCase=idx;
+    document.querySelectorAll('.sb-item').forEach((el,i)=>el.classList.toggle('active',i===idx));
+    renderAll();
+}
+
+function generateAIMsg(){
+    const ar=e('aiResponseArea');
+    if(!ar)return;
+    const c=CASES[selectedCase];
+    ar.innerHTML=`<div class="ai-block">
+      <div class="ai-label">AI Cultural Liaison Agent</div>
+      <div class="ai-loading"><div class="ai-dot"></div><div class="ai-dot"></div><div class="ai-dot"></div></div>
+    </div>`;
+    setTimeout(()=>{
+      ar.innerHTML=`<div class="ai-block">
+        <div class="ai-label">AI Cultural Liaison Agent — Tailored Message</div>
+        <div class="ai-text">Your health team has completed your screening and would like to follow up with you. This is a routine next step. Your navigator will reach out within 48 hours.</div>
+      </div>`;
+      log('action',`AGENT-COMM: AI-tailored message generated for ${c.id}`);
+    },2000);
+}
+
+function renderClinicalInbox(){
+    const inbox=e('clinicalInbox');
+    if(!inbox) return;
+    const priorityCases=CASES.filter(c=>c.stage<6&&(c.priority==='CRITICAL'||c.priority==='HIGH')).sort((a,b)=>a.sla_remaining-b.sla_remaining);
+    if(!priorityCases.length){
+      inbox.innerHTML='<div class="banner accepted"><div class="banner-title">No high-priority cases pending action.</div></div>';
+      return;
+    }
+    let h='';
+    priorityCases.forEach(c=>{
+      const idx=CASES.indexOf(c);
+      const canAck=c.stage===4&&c.owner_accepted;
+      const canHand=c.stage===3&&c.owner_accepted;
+      h+=`<div class="card" style="margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:12px">
+          <div>
+            <div class="case-id-mono">${escHTML(c.id)}</div>
+            <div style="font-size:15px;font-weight:700">${escHTML(c.condition)}</div>
+          </div>
+          <div><span class="tag ${priorityTagClass(c.priority)}">${escHTML(c.priority)}</span></div>
+        </div>
+        ${trackerHTML(c)}
+        <div class="btn-row" style="margin-top:12px">
+          ${!c.owner_accepted?`<button class="btn btn-secondary btn-sm" onclick="acceptOwnershipForCase(${idx})">Accept Ownership</button>`:''}
+          <button class="btn ${canHand?'btn-green':'btn-secondary'} btn-sm" ${canHand?'':'disabled'} onclick="advanceStage()">Approve Specialist Handover</button>
+          <button class="btn ${canAck?'btn-primary':'btn-secondary'} btn-sm" ${canAck?'':'disabled'} onclick="advanceStage()">Acknowledge Case</button>
+        </div>
+      </div>`;
+    });
+    inbox.innerHTML=h;
+}
+
+function patientLookup(){
+    const token=(e('ptTokenInput').value||'').trim();
+    const found=CASES.find(c=>c.patient_token===token);
+    if(!found){ showToast('Token not recognised.'); return; }
+    log('info',`AGENT-ACCESS: Patient accessed ${found.id} via secure token`);
+    renderPatientView(found);
+}
+
+function renderPatientView(c){
+    if(e('patientLookup')) e('patientLookup').style.display='none';
+    const pv=e('patientView');
+    if(pv) pv.style.display='block';
+
+    const alreadyAcked=c.stage>=3;
+    const steps=[
+      ['Result confirmed','Your screening result has been processed.',c.timeline[0]?.ts||''],
+      ['You were notified','We sent you a message explaining your result.',c.timeline[1]?.ts||''],
+      ['You confirmed receipt','You acknowledged the message.',c.timeline[2]?.ts||''],
+      ['Clinician review','A doctor has reviewed your result.',c.timeline[3]?.ts||''],
+      ['Specialist referral','We have arranged for you to see a specialist.',c.timeline[4]?.ts||''],
+      ['Your care is complete','Your case is closed.',''],
+    ];
+    let stepsH='<div class="pt-steps">';
+    steps.forEach(([title,desc,ts],i)=>{
+      const isLast=i===steps.length-1;
+      const displayIndex = i; 
+      const done=displayIndex<c.stage,active=displayIndex===c.stage;
+      const numCls=done?'done':active?'active':'';
+      const inner=done?'&#10003;':i+1;
+      stepsH+=`<div class="pt-step">
+        <div class="pt-step-left"><div class="pt-num ${numCls}">${inner}</div>${isLast?'':'<div class="pt-line '+(done?'done':'')+'"></div>'}</div>
+        <div class="pt-content"><div class="pt-title">${escHTML(title)}</div><div class="pt-desc">${escHTML(desc)}</div></div>
+      </div>`;
+    });
+    stepsH+='</div>';
+
+    const ackSection=alreadyAcked
+      ?`<div class="banner accepted"><div class="banner-title">Confirmed</div></div>`
+      :`<button class="btn btn-primary" onclick="patientAcknowledge('${c.id}')" style="width:100%;padding:11px">Acknowledge</button>`;
+
+    if(pv) pv.innerHTML=`
+      <div class="card"><div class="case-id-mono">${escHTML(c.id)}</div><div style="font-size:17px;font-weight:700">${escHTML(c.condition)}</div></div>
+      ${bilingualHTML(c)}
+      <div style="margin-bottom:20px">${ackSection}</div>
+      ${stepsH}
+      <button class="btn btn-secondary" onclick="patientSignOut()">Sign Out</button>`;
+}
+
+function patientSignOut(){
+    if(e('patientLookup')) e('patientLookup').style.display='block';
+    if(e('patientView')) e('patientView').style.display='none';
+    if(e('ptTokenInput')) e('ptTokenInput').value='';
+}
+
+function updateSidebarStats(){
+    if(!CASES) return;
+    const open=CASES.filter(c=>c.stage<6).length;
+    const breaches=CASES.filter(c=>slaStatus(c)==='BREACH').length;
+    const closed=CASES.filter(c=>c.stage===6).length;
+    if(e('sb-open'))e('sb-open').textContent=open;
+    if(e('sb-breach'))e('sb-breach').textContent=breaches;
+    if(e('sb-closed'))e('sb-closed').textContent=closed;
+    if(e('heroNum'))e('heroNum').textContent=open;
+}
+
+function renderAll(){
+    if(CASES.length === 0) return;
+    renderPipeline();
+    renderCaseDetail();
+    renderClinicalInbox();
+    updateSidebarStats();
+}
+
+(function boot(){
+    fetchCases();
+    const msgs=[
+      ['info','AGENT-BOOT: ZeroDrop Deterministic Orchestrator v3.1 initialised via FastAPI Backend'],
+      ['success','MALAFFI-FHIR: Simulated HL7 FHIR v4.0.1 endpoint active'],
+      ['info','ADHICS-AUDIT: Role-based access control active']
+    ];
+    msgs.forEach((m,i)=>setTimeout(()=>log(m[0],m[1]),(i+1)*700));
+})();
+</script>
+</body>
+</html>
