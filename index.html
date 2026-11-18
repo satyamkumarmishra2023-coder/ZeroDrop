@@ -2,1328 +2,421 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ZeroDrop — Screening-to-Care Loop</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZeroDrop - Dynamic Care Navigator</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-/* ═══════════════════════════════════════════════════════
-   DESIGN TOKENS — single source of truth
-   Both themes defined here; .light body overrides them.
-═══════════════════════════════════════════════════════ */
-:root {
-  --bg:        #07090f;
-  --bg-raised: #0d1117;
-  --bg-card:   #111827;
-  --bg-hover:  #1a2235;
-  --border:    rgba(255,255,255,0.08);
-  --border-hi: rgba(255,255,255,0.14);
-  --text-1:    #f0f4fa;
-  --text-2:    #8b9ab0;
-  --text-3:    #485a72;
-  --accent:    #0ea5e9;
-  --accent-2:  #38bdf8;
-  --accent-bg: rgba(14,165,233,0.10);
-  --green:     #10b981;
-  --green-bg:  rgba(16,185,129,0.12);
-  --amber:     #f59e0b;
-  --amber-bg:  rgba(245,158,11,0.12);
-  --red:       #ef4444;
-  --red-bg:    rgba(239,68,68,0.10);
-  --purple:    #8b5cf6;
-  --shadow:    0 1px 3px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05);
-  --radius:    10px;
-  --radius-sm: 7px;
-}
-body.light {
-  --bg:        #f1f5fb;
-  --bg-raised: #ffffff;
-  --bg-card:   #f8fafc;
-  --bg-hover:  #eef2f8;
-  --border:    rgba(0,0,0,0.07);
-  --border-hi: rgba(0,0,0,0.13);
-  --text-1:    #0d1117;
-  --text-2:    #374a62;
-  --text-3:    #7a8fa3;
-  --accent:    #0284c7;
-  --accent-2:  #0369a1;
-  --accent-bg: rgba(2,132,199,0.08);
-  --green:     #059669;
-  --green-bg:  rgba(5,150,105,0.10);
-  --amber:     #d97706;
-  --amber-bg:  rgba(217,119,6,0.10);
-  --red:       #dc2626;
-  --red-bg:    rgba(220,38,38,0.08);
-  --shadow:    0 1px 4px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.05);
-}
-
-/* ═══ RESET ═══════════════════════════════════════════ */
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{height:100%;font-size:14px;-webkit-text-size-adjust:100%}
-body{
-  font-family:'Inter',system-ui,sans-serif;
-  background:var(--bg);color:var(--text-1);
-  height:100%;overflow:hidden;
-  transition:background .25s,color .25s;
-}
-button{font-family:inherit;cursor:pointer}
-a{color:var(--accent);text-decoration:none}
-input,select,textarea{font-family:inherit}
-::-webkit-scrollbar{width:5px;height:5px}
-::-webkit-scrollbar-thumb{background:var(--border-hi);border-radius:3px}
-::-webkit-scrollbar-track{background:transparent}
-
-/* ═══ TOPBAR ═══════════════════════════════════════════ */
-#topbar{
-  position:fixed;top:0;left:0;right:0;height:52px;z-index:300;
-  background:var(--bg-raised);border-bottom:1px solid var(--border);
-  display:flex;align-items:center;padding:0 20px;gap:14px;
-  padding-top: env(safe-area-inset-top, 0px);
-}
-.top-logo{font-size:16px;font-weight:800;letter-spacing:-.4px;color:var(--text-1)}
-.top-logo span{color:var(--accent)}
-.status-pill{
-  display:flex;align-items:center;gap:6px;
-  background:var(--green-bg);border:1px solid rgba(16,185,129,.22);
-  border-radius:20px;padding:3px 10px;font-size:11px;color:var(--green);font-weight:500;
-}
-.status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-.top-spacer{flex:1}
-.nav-tabs{display:flex;gap:2px}
-.nav-btn{
-  padding:5px 13px;border-radius:6px;font-size:12px;font-weight:500;
-  color:var(--text-2);border:none;background:transparent;
-  transition:background .12s,color .12s;
-}
-.nav-btn:hover{background:var(--bg-hover);color:var(--text-1)}
-.nav-btn.active{background:var(--bg-card);color:var(--accent-2)}
-.theme-toggle{
-  width:34px;height:34px;border-radius:8px;border:1px solid var(--border-hi);
-  background:var(--bg-card);color:var(--text-2);font-size:15px;
-  display:flex;align-items:center;justify-content:center;
-  transition:background .12s;
-}
-.theme-toggle:hover{background:var(--bg-hover);color:var(--text-1)}
-
-/* ═══ SHELL ════════════════════════════════════════════ */
-#shell{
-  position:fixed;top:52px;bottom:0;left:0;right:0;
-  display:flex;overflow:hidden;
-  padding-bottom:env(safe-area-inset-bottom,0px);
-}
-
-/* ═══ SIDEBAR ══════════════════════════════════════════ */
-#sidebar{
-  width:230px;min-width:230px;
-  background:var(--bg-raised);border-right:1px solid var(--border);
-  display:flex;flex-direction:column;overflow:hidden;
-}
-.sb-section{padding:14px 12px 6px}
-.sb-label{
-  font-size:10px;font-weight:700;color:var(--text-3);
-  text-transform:uppercase;letter-spacing:.8px;
-  padding:0 4px;margin-bottom:6px;
-}
-.sb-item{
-  display:flex;align-items:center;gap:9px;padding:7px 8px;
-  border-radius:7px;cursor:pointer;color:var(--text-2);
-  font-size:12.5px;font-weight:500;border:none;background:transparent;
-  width:100%;text-align:left;transition:background .12s,color .12s;
-}
-.sb-item:hover{background:var(--bg-hover);color:var(--text-1)}
-.sb-item.active{background:var(--accent-bg);color:var(--accent-2)}
-.sb-item .badge{
-  margin-left:auto;font-size:10px;font-weight:700;
-  border-radius:10px;padding:1px 7px;
-}
-.badge-red{background:var(--red);color:#fff}
-.badge-amber{background:var(--amber);color:#07090f}
-.badge-green{background:var(--green);color:#fff}
-.badge-blue{background:var(--accent);color:#fff}
-.sb-divider{height:1px;background:var(--border);margin:8px 12px}
-.sb-footer{
-  margin-top:auto;padding:12px;border-top:1px solid var(--border);
-}
-.sb-stat{display:flex;justify-content:space-between;padding:3px 0}
-.sb-stat .sk{font-size:11px;color:var(--text-3)}
-.sb-stat .sv{font-size:12px;font-weight:600;color:var(--text-1)}
-
-/* ═══ MAIN ═════════════════════════════════════════════ */
-#main{
-  flex:1;overflow-y:auto;overflow-x:hidden;padding:20px;
-  scrollbar-width:thin;
-}
-
-/* ═══ AGENT PANEL ══════════════════════════════════════ */
-#agent-panel{
-  width:290px;min-width:290px;
-  background:var(--bg-raised);border-left:1px solid var(--border);
-  display:flex;flex-direction:column;overflow:hidden;
-}
-.ap-header{
-  padding:14px 15px;border-bottom:1px solid var(--border);
-  display:flex;align-items:center;gap:10px;
-}
-.ap-pulse{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 1.5s infinite;flex-shrink:0}
-.ap-title{font-size:12px;font-weight:600;color:var(--text-1)}
-.ap-sub{font-size:10px;color:var(--text-3)}
-#agent-log{
-  flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:3px;
-  scrollbar-width:thin;
-}
-.log-line{
-  font-family:'JetBrains Mono',monospace;font-size:10px;line-height:1.65;
-  padding:5px 8px;border-radius:5px;background:var(--bg-card);
-  border-left:2px solid var(--border-hi);color:var(--text-2);word-break:break-word;
-}
-.log-line.info   {border-left-color:var(--accent)}
-.log-line.success{border-left-color:var(--green);color:var(--green)}
-.log-line.warn   {border-left-color:var(--amber);color:var(--amber)}
-.log-line.error  {border-left-color:var(--red);color:var(--red)}
-.log-line.action {border-left-color:var(--purple);color:var(--purple)}
-.log-ts{color:var(--text-3);margin-right:4px}
-.ap-controls{
-  padding:9px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:5px;
-}
-.ap-btn{
-  padding:7px 10px;border-radius:6px;font-size:11px;font-weight:500;
-  border:1px solid var(--border-hi);background:var(--bg-card);color:var(--text-2);
-  cursor:pointer;text-align:left;transition:all .12s;
-}
-.ap-btn:hover{background:var(--bg-hover);color:var(--text-1);border-color:var(--border-hi)}
-.ap-btn.primary{background:var(--accent-bg);color:var(--accent-2);border-color:rgba(14,165,233,.3)}
-
-/* ═══ VIEWS ════════════════════════════════════════════ */
-.view{display:none}
-.view.active{display:block}
-
-/* ═══ TYPOGRAPHY ═══════════════════════════════════════ */
-.page-title{font-size:20px;font-weight:700;letter-spacing:-.3px;margin-bottom:3px}
-.page-sub{font-size:12px;color:var(--text-3);margin-bottom:18px}
-.section-label{
-  font-size:10px;font-weight:700;color:var(--text-3);
-  text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;
-}
-.case-id-mono{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-3)}
-
-/* ═══ CARDS ════════════════════════════════════════════ */
-.card{
-  background:var(--bg-card);border:1px solid var(--border);
-  border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow);
-  margin-bottom:12px;
-}
-.card-sm{
-  background:var(--bg-card);border:1px solid var(--border);
-  border-radius:var(--radius-sm);padding:11px 13px;margin-bottom:8px;
-}
-.card-sm:hover{border-color:var(--accent);background:var(--bg-hover)}
-
-/* ═══ KPI GRID ═════════════════════════════════════════ */
-.kpi-grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
-  gap:10px;margin-bottom:20px;
-}
-.kpi{
-  background:var(--bg-card);border:1px solid var(--border);
-  border-radius:var(--radius);padding:15px 16px;box-shadow:var(--shadow);
-}
-.kpi-label{font-size:10px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px}
-.kpi-val{font-size:28px;font-weight:800;line-height:1;margin-bottom:4px}
-.kpi-delta{font-size:11px;color:var(--text-3)}
-.kpi-delta.up{color:var(--green)}
-.kpi-delta.down{color:var(--red)}
-
-/* ═══ TAGS ══════════════════════════════════════════════ */
-.tag{display:inline-block;font-size:10px;font-weight:600;padding:2px 9px;border-radius:20px}
-.tag-critical{background:var(--red-bg);color:var(--red)}
-.tag-high    {background:var(--amber-bg);color:var(--amber)}
-.tag-normal  {background:var(--green-bg);color:var(--green)}
-.tag-stage   {background:var(--accent-bg);color:var(--accent-2)}
-.tag-breach  {background:var(--red-bg);color:var(--red)}
-.tag-warn    {background:var(--amber-bg);color:var(--amber)}
-.tag-ok      {background:var(--green-bg);color:var(--green)}
-
-/* ═══ STAGE TRACKER ════════════════════════════════════ */
-.tracker{display:flex;align-items:center;gap:0;padding:12px 0;overflow-x:auto}
-.trk-step{display:flex;flex-direction:column;align-items:center;min-width:76px;gap:4px}
-.trk-node{
-  width:30px;height:30px;border-radius:50%;
-  display:flex;align-items:center;justify-content:center;
-  font-size:11px;font-weight:700;position:relative;z-index:1;
-  border:2px solid var(--border-hi);background:var(--bg-card);color:var(--text-3);
-}
-.trk-node.done  {background:var(--green);border-color:var(--green);color:#fff}
-.trk-node.active{background:var(--accent);border-color:var(--accent);color:#fff;animation:glow 2s infinite}
-@keyframes glow{0%,100%{box-shadow:0 0 0 0 rgba(14,165,233,.4)}50%{box-shadow:0 0 0 7px rgba(14,165,233,0)}}
-.trk-node.breach{background:var(--red);border-color:var(--red);color:#fff}
-.trk-label{font-size:9px;color:var(--text-3);text-align:center;line-height:1.3}
-.trk-line{flex:1;height:2px;background:var(--border-hi);margin-top:-17px;min-width:16px}
-.trk-line.done{background:var(--green)}
-
-/* ═══ PIPELINE KANBAN ══════════════════════════════════ */
-.pipeline{display:flex;gap:0;overflow-x:auto;margin-bottom:22px}
-.pipe-col{flex:1;min-width:155px;display:flex;flex-direction:column}
-.pipe-head{
-  padding:9px 11px;background:var(--bg-card);
-  border:1px solid var(--border);border-bottom:none;
-  border-radius:var(--radius) var(--radius) 0 0;
-}
-.pipe-col:not(:first-child) .pipe-head{border-left:none;border-radius:0 var(--radius) 0 0}
-.pipe-col:first-child .pipe-head{border-radius:var(--radius) 0 0 0}
-.pipe-name{font-size:10px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.4px}
-.pipe-ct{font-size:10px;color:var(--text-3);margin-top:1px}
-.pipe-body{
-  flex:1;min-height:110px;padding:7px;
-  background:var(--bg-raised);border:1px solid var(--border);
-  border-top:none;display:flex;flex-direction:column;gap:5px;
-}
-.pipe-col:last-child  .pipe-body{border-radius:0 0 var(--radius) 0}
-.pipe-col:first-child .pipe-body{border-radius:0 0 0 var(--radius)}
-.pipe-empty{font-size:11px;color:var(--text-3);text-align:center;padding:14px 0}
-.pcase{
-  background:var(--bg-card);border:1px solid var(--border);
-  border-radius:6px;padding:9px 10px;cursor:pointer;
-  transition:border-color .15s,background .15s;
-}
-.pcase:hover{border-color:var(--accent);background:var(--bg-hover)}
-.pcase.selected{border-color:var(--accent)}
-.pcase.breach-border{border-left:3px solid var(--red)}
-.pcase.warn-border  {border-left:3px solid var(--amber)}
-
-/* ═══ SLA BAR ══════════════════════════════════════════ */
-.sla-bar-wrap{margin-top:5px}
-.sla-bar-track{height:5px;background:var(--border-hi);border-radius:3px;overflow:hidden}
-.sla-bar-fill{height:100%;border-radius:3px;transition:width .6s}
-
-/* ═══ PROVIDER CHAIN ════════════════════════════════════ */
-.pchain{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:10px 0}
-.pchain-node{
-  background:var(--bg-hover);border:1px solid var(--border-hi);
-  border-radius:6px;padding:5px 11px;font-size:11px;font-weight:500;color:var(--text-2);
-}
-.pchain-arrow{font-size:12px;color:var(--text-3);font-family:'JetBrains Mono',monospace}
-
-/* ═══ TIMELINE ═════════════════════════════════════════ */
-.tl{display:flex;flex-direction:column;gap:0}
-.tl-item{display:flex;gap:11px;padding-bottom:14px}
-.tl-left{display:flex;flex-direction:column;align-items:center}
-.tl-dot{width:9px;height:9px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:4px}
-.tl-dot.done{background:var(--green)}
-.tl-line{width:2px;flex:1;background:var(--border-hi);margin:3px 0;min-height:14px}
-.tl-content{flex:1}
-.tl-title{font-size:12px;font-weight:500;color:var(--text-1)}
-.tl-ts{font-size:10px;color:var(--text-3);font-family:'JetBrains Mono',monospace}
-.tl-desc{font-size:11px;color:var(--text-2);margin-top:2px;line-height:1.6}
-
-/* ═══ TABS ══════════════════════════════════════════════ */
-.tabs{display:flex;gap:2px;border-bottom:1px solid var(--border);padding:0 18px}
-.tab-btn{
-  padding:9px 14px;font-size:12px;font-weight:500;color:var(--text-3);
-  border-bottom:2px solid transparent;cursor:pointer;border:none;background:transparent;
-  margin-bottom:-1px;transition:color .12s;
-}
-.tab-btn:hover{color:var(--text-1)}
-.tab-btn.active{color:var(--accent-2);border-bottom-color:var(--accent-2)}
-.tab-pane{display:none;padding:18px}
-.tab-pane.active{display:block}
-
-/* ═══ OWNERSHIP / GUARDRAIL BANNERS ═══════════════════ */
-.banner{border-radius:var(--radius-sm);padding:11px 14px;margin-bottom:11px}
-.banner.pending  {background:var(--amber-bg);border:1px solid rgba(245,158,11,.28)}
-.banner.accepted {background:var(--green-bg);border:1px solid rgba(16,185,129,.25)}
-.banner.lock     {background:var(--red-bg);border:1px solid rgba(239,68,68,.25)}
-.banner.lock.ok  {background:var(--green-bg);border-color:rgba(16,185,129,.25)}
-.banner-title{font-size:12px;font-weight:600;color:var(--text-1);margin-bottom:2px}
-.banner-sub{font-size:11px;color:var(--text-2)}
-
-/* ═══ BUTTONS ══════════════════════════════════════════ */
-.btn{
-  display:inline-flex;align-items:center;gap:6px;
-  padding:7px 14px;border-radius:var(--radius-sm);
-  font-size:12px;font-weight:500;border:none;cursor:pointer;
-  transition:all .12s;min-height:32px;
-}
-.btn-primary {background:var(--accent);color:#fff}
-.btn-primary:hover{background:var(--accent-2)}
-.btn-secondary{background:var(--bg-hover);color:var(--text-2);border:1px solid var(--border-hi)}
-.btn-secondary:hover{color:var(--text-1);border-color:var(--accent)}
-.btn-danger{background:var(--red-bg);color:var(--red);border:1px solid rgba(239,68,68,.3)}
-.btn-danger:hover{background:rgba(239,68,68,.2)}
-.btn-green{background:var(--green-bg);color:var(--green);border:1px solid rgba(16,185,129,.3)}
-.btn-green:hover{background:rgba(16,185,129,.22)}
-.btn-sm{padding:4px 10px;font-size:11px;min-height:26px}
-.btn-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
-
-/* ═══ FORM ELEMENTS ════════════════════════════════════ */
-.field-label{font-size:11px;font-weight:500;color:var(--text-2);margin-bottom:4px}
-.text-in{
-  width:100%;background:var(--bg-raised);border:1px solid var(--border-hi);
-  border-radius:var(--radius-sm);padding:8px 12px;color:var(--text-1);
-  font-size:12px;font-family:'JetBrains Mono',monospace;outline:none;min-height:36px;
-  transition:border-color .15s;
-}
-.text-in:focus{border-color:var(--accent)}
-.select-in{
-  width:100%;background:var(--bg-raised);border:1px solid var(--border-hi);
-  border-radius:var(--radius-sm);padding:8px 12px;color:var(--text-1);
-  font-size:12px;outline:none;min-height:36px;cursor:pointer;
-}
-.select-in option{background:var(--bg-card)}
-
-/* ═══ ANALYTICS BARS ════════════════════════════════════ */
-.bar-chart{display:flex;flex-direction:column;gap:9px}
-.bar-row{display:flex;align-items:center;gap:10px}
-.bar-label{font-size:11px;color:var(--text-2);width:160px;flex-shrink:0}
-.bar-track{flex:1;height:9px;background:var(--border-hi);border-radius:5px;overflow:hidden}
-.bar-fill{height:100%;border-radius:5px;transition:width 1.2s cubic-bezier(.4,0,.2,1)}
-.bar-val{font-size:11px;color:var(--text-2);width:36px;text-align:right;flex-shrink:0}
-
-/* ═══ PATIENT STEPS ════════════════════════════════════ */
-.pt-steps{display:flex;flex-direction:column;gap:0;padding:0 4px}
-.pt-step{display:flex;gap:14px;padding-bottom:20px}
-.pt-step-left{display:flex;flex-direction:column;align-items:center}
-.pt-num{
-  width:36px;height:36px;border-radius:50%;flex-shrink:0;
-  background:var(--bg-hover);border:2px solid var(--border-hi);
-  display:flex;align-items:center;justify-content:center;
-  font-size:13px;font-weight:700;color:var(--text-3);
-}
-.pt-num.done  {background:var(--green);border-color:var(--green);color:#fff}
-.pt-num.active{background:var(--accent);border-color:var(--accent);color:#fff}
-.pt-line{width:2px;flex:1;background:var(--border-hi);margin:4px 0;min-height:22px}
-.pt-line.done{background:var(--green)}
-.pt-content{flex:1;padding-top:5px}
-.pt-title{font-size:13px;font-weight:500;color:var(--text-1);margin-bottom:2px}
-.pt-desc{font-size:12px;color:var(--text-2);line-height:1.65}
-.pt-ts{font-size:10px;color:var(--text-3);font-family:'JetBrains Mono',monospace;margin-top:3px}
-
-/* ═══ BILINGUAL BLOCKS ═════════════════════════════════ */
-.bi-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
-.bi-side{
-  background:var(--bg-card);border:1px solid var(--border);
-  border-radius:var(--radius);padding:16px;
-}
-.bi-ar{direction:rtl;text-align:right}
-.bi-lang{font-size:10px;font-weight:700;color:var(--text-3);letter-spacing:.6px;text-transform:uppercase;margin-bottom:8px}
-.bi-title{font-size:15px;font-weight:700;color:var(--text-1);margin-bottom:9px}
-.bi-body{font-size:12.5px;color:var(--text-2);line-height:1.8;margin-bottom:10px}
-.bi-action{font-size:11px;color:var(--accent);font-weight:500;margin-bottom:8px}
-.bi-disc{font-size:10px;color:var(--text-3);padding-top:9px;border-top:1px solid var(--border)}
-
-/* ═══ INTEGRITY HERO ════════════════════════════════════ */
-.hero{
-  background:linear-gradient(135deg,rgba(239,68,68,.07),rgba(14,165,233,.05));
-  border:1px solid rgba(239,68,68,.18);
-  border-radius:var(--radius);padding:22px 24px;
-  margin-bottom:20px;display:flex;align-items:center;gap:22px;flex-wrap:wrap;
-}
-.hero-num{font-size:54px;font-weight:800;color:var(--red);line-height:1}
-.hero-label{font-size:15px;font-weight:600;color:var(--text-1);margin-bottom:4px}
-.hero-sub{font-size:12px;color:var(--text-2);line-height:1.6;max-width:500px}
-
-/* ═══ DISCLAIMER ════════════════════════════════════════ */
-.disclaimer{
-  background:var(--bg-card);border:1px solid var(--border);
-  border-radius:var(--radius-sm);padding:10px 14px;
-  font-size:11px;color:var(--text-3);line-height:1.6;margin-bottom:16px;
-}
-.disclaimer strong{color:var(--text-2)}
-
-/* ═══ TOAST ════════════════════════════════════════════ */
-#toast{
-  position:fixed;top:62px;right:16px;z-index:500;
-  background:var(--bg-card);border:1px solid var(--border-hi);
-  border-left:3px solid var(--red);border-radius:var(--radius);
-  padding:13px 16px;max-width:320px;
-  box-shadow:0 8px 32px rgba(0,0,0,.5);
-  display:none;animation:slideIn .3s ease;
-}
-#toast.show{display:block}
-@keyframes slideIn{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
-.toast-title{font-size:12px;font-weight:600;color:var(--red);margin-bottom:4px}
-.toast-body{font-size:11px;color:var(--text-2);line-height:1.6}
-.toast-close{position:absolute;top:9px;right:10px;cursor:pointer;color:var(--text-3);font-size:14px;border:none;background:transparent}
-
-/* ═══ FHIR VIEWER ══════════════════════════════════════ */
-.fhir-block{
-  background:var(--bg-raised);border:1px solid var(--border);
-  border-radius:var(--radius-sm);padding:14px;
-  font-family:'JetBrains Mono',monospace;font-size:10.5px;
-  color:var(--text-2);line-height:1.75;overflow-x:auto;max-height:300px;overflow-y:auto;
-}
-
-/* ═══ CONSULT ROW ═══════════════════════════════════════ */
-.consult-row{
-  display:flex;align-items:center;gap:11px;padding:10px 13px;
-  background:var(--bg-card);border:1px solid var(--border);
-  border-radius:var(--radius-sm);margin-bottom:8px;
-}
-.c-avatar{
-  width:36px;height:36px;border-radius:9px;flex-shrink:0;
-  background:linear-gradient(135deg,var(--accent),var(--purple));
-  display:flex;align-items:center;justify-content:center;
-  font-size:13px;font-weight:700;color:#fff;
-}
-.c-name{font-size:12px;font-weight:500;color:var(--text-1)}
-.c-role{font-size:10px;color:var(--text-3)}
-.c-sla{font-size:10px;font-family:'JetBrains Mono',monospace;margin-left:auto}
-
-/* ═══ AI RESPONSE BLOCK ════════════════════════════════ */
-.ai-block{
-  background:var(--accent-bg);border:1px solid rgba(14,165,233,.2);
-  border-radius:var(--radius);padding:14px;margin-top:12px;
-}
-.ai-label{font-size:10px;font-weight:700;color:var(--accent-2);letter-spacing:.5px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
-.ai-text{font-size:12px;color:var(--text-2);line-height:1.8}
-.ai-loading{display:flex;gap:5px;align-items:center;padding:4px 0}
-.ai-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:bounce 1.2s infinite}
-.ai-dot:nth-child(2){animation-delay:.2s}
-.ai-dot:nth-child(3){animation-delay:.4s}
-@keyframes bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-
-/* ═══ PROGRESS RING ════════════════════════════════════ */
-.ring-wrap{position:relative;width:60px;height:60px;flex-shrink:0}
-.ring-wrap svg{transform:rotate(-90deg)}
-.ring-label{
-  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-  font-size:11px;font-weight:700;text-align:center;line-height:1.2;
-}
-
-/* ═══ ANALYTICS GRID ════════════════════════════════════ */
-.analytics-2col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-
-/* ═══ RESPONSIVE ════════════════════════════════════════ */
-@media(max-width:1100px){#agent-panel{width:220px;min-width:220px}}
-@media(max-width:900px){
-  #sidebar{width:46px;min-width:46px}
-  #sidebar .sb-label,#sidebar .sb-item span:not(.badge),
-  #sidebar .sb-footer .sb-stat .sk,#sidebar .sb-footer .sb-stat .sv{display:none}
-  #agent-panel{width:200px;min-width:200px}
-  .kpi-grid{grid-template-columns:1fr 1fr}
-  .bi-grid{grid-template-columns:1fr}
-  .analytics-2col{grid-template-columns:1fr}
-}
-@media(max-width:650px){
-  #agent-panel{display:none}
-  .nav-tabs{display:none}
-  .kpi-grid{grid-template-columns:1fr}
-  .pipeline{display:none}
-  .bi-grid{grid-template-columns:1fr}
+:root{--bg:#07090f;--bg2:#0d1117;--card:#111827;--bd:#1f2937;--bd2:#2d3a4f;--t1:#f1f5f9;--t2:#94a3b8;--t3:#64748b;--ac:#0ea5e9;--ac2:#38bdf8;--acbg:rgba(14,165,233,.1);--g:#10b981;--gbg:rgba(16,185,129,.12);--am:#f59e0b;--ambg:rgba(245,158,11,.12);--r:#ef4444;--rbg:rgba(239,68,68,.12);--pu:#a78bfa;--pubg:rgba(167,139,250,.12);--sh:0 4px 20px rgba(0,0,0,.35)}
+body.light{--bg:#f1f5fb;--bg2:#fff;--card:#fff;--bd:#e2e8f0;--bd2:#cbd5e1;--t1:#0f172a;--t2:#475569;--t3:#94a3b8;--sh:0 4px 16px rgba(15,23,42,.08)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:13px/1.5 Inter,system-ui,sans-serif;background:var(--bg);color:var(--t1);height:100vh;overflow:hidden}
+button{font:inherit;cursor:pointer}
+code,pre,.mono{font-family:'JetBrains Mono',monospace}
+h2{font-size:17px;font-weight:700}
+.muted{color:var(--t3)}.sm{font-size:11px}.sp{flex:1}
+@keyframes pulse{50%{opacity:.35}}
+@keyframes glow{50%{box-shadow:0 0 0 7px transparent}}
+@keyframes fadeUp{from{transform:translateY(6px);opacity:0}to{transform:none;opacity:1}}
+@keyframes slideIn{from{transform:translateX(20px);opacity:0}to{transform:none;opacity:1}}
+@keyframes sweep{from{background-position:-50% 0}to{background-position:150% 0}}
+@keyframes crit{50%{box-shadow:0 0 18px rgba(239,68,68,.35)}}
+/* top bar */
+#top{position:fixed;top:0;left:0;right:0;height:52px;background:var(--bg2);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:14px;padding:0 18px;z-index:50}
+.logo{font-size:16px;font-weight:800}.logo span{color:var(--ac)}
+.pill{display:flex;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;background:var(--gbg);color:var(--g)}
+.pill.off{background:var(--rbg);color:var(--r)}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.8s infinite;flex:none}
+.dot.g{color:var(--g)}
+#clock{font-size:11px;color:var(--t3)}
+.ib{width:34px;height:34px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--t1)}
+/* shell */
+#shell{position:fixed;top:52px;bottom:0;left:0;right:0;display:grid;grid-template-columns:260px minmax(0,1fr) 300px}
+#side,#main{overflow-y:auto}
+#side{background:var(--bg2);border-right:1px solid var(--bd);padding:12px}
+#main{padding:18px 20px 40px}
+#agent{background:var(--bg2);border-left:1px solid var(--bd);display:flex;flex-direction:column;overflow:hidden}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;box-shadow:var(--sh)}
+.side-t{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.7px;margin:2px 2px 10px}
+.bdg{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;background:var(--acbg);color:var(--ac2)}
+.bdg.r{background:var(--rbg);color:var(--r)}.bdg.am{background:var(--ambg);color:var(--am)}.bdg.g{background:var(--gbg);color:var(--g)}.bdg.pu{background:var(--pubg);color:var(--pu)}
+/* case list */
+.ci{padding:10px 11px;border:1px solid var(--bd);border-left:3px solid var(--g);border-radius:10px;background:var(--card);margin-bottom:8px;cursor:pointer;transition:.15s}
+.ci:hover{transform:translateX(2px)}.ci.sel{outline:2px solid var(--ac)}
+.ci.HIGH{border-left-color:var(--am)}.ci.CRITICAL{border-left-color:var(--r)}
+.ci .r1{display:flex;justify-content:space-between;gap:6px;align-items:flex-start;flex-wrap:wrap}
+.ci .r2{font-size:11px;color:var(--t2);margin:3px 0 6px}
+.ci .r3{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.sla-t.ok,.wv.ok{color:var(--g)}.sla-t.warn,.wv.warn{color:var(--am)}.sla-t.bad,.wv.bad{color:var(--r)}
+/* KPI */
+#kpi{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:18px}
+.kp{padding:12px 14px}.kl{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.6px}
+.kv{font-size:28px;font-weight:800;line-height:1.2}.kv.ok{color:var(--g)}.kv.warn{color:var(--am)}.kv.bad{color:var(--r)}.ks{font-size:11px;color:var(--t2)}
+/* watchdog */
+.wd{margin-bottom:22px}
+.wd-h{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.sweep{height:2px;margin-bottom:12px;background:linear-gradient(90deg,transparent,var(--ac),transparent) no-repeat;background-size:40% 100%;animation:sweep 3s linear infinite}
+.chips{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.al{display:flex;gap:14px;padding:14px 16px;border-left:4px solid var(--am);margin-bottom:10px;animation:fadeUp .4s}
+.al.HIGH,.al.CRITICAL{border-left-color:var(--r)}
+.al.CRITICAL{animation:fadeUp .4s,crit 2.4s infinite;background:linear-gradient(90deg,var(--rbg),var(--card) 45%)}
+.ring{--p:0;--c:var(--am);width:56px;height:56px;border-radius:50%;background:conic-gradient(var(--c) calc(var(--p)*1%),var(--bd2) 0);display:grid;place-items:center;position:relative;flex:none}
+.ring::before{content:"";position:absolute;inset:5px;border-radius:50%;background:var(--card)}
+.ring b{position:relative;font-size:13px;font-weight:800}
+.al.HIGH .ring,.al.CRITICAL .ring{--c:var(--r)}
+.al-b{flex:1;min-width:0}
+.al-t{font-size:14px;font-weight:700;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.al-e{font-size:12px;color:var(--t2);margin:4px 0 8px;line-height:1.7}
+.al-r{font-size:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.al-r b{color:var(--ac2)}
+details.why{margin-top:8px;font-size:11px;color:var(--t3)}details.why summary{cursor:pointer;color:var(--t2)}
+.fac{display:grid;grid-template-columns:1fr 90px 34px;gap:8px;align-items:center;padding:3px 0;font-size:11px;color:var(--t2)}
+.fac em{color:var(--t3);font-style:normal}
+.fb{height:5px;background:var(--bd2);border-radius:3px;overflow:hidden}.fb i{display:block;height:100%;background:var(--r)}.fb i.neg{background:var(--g)}
+.fn{margin-top:6px;color:var(--t3)}
+.ok-card{padding:16px;color:var(--g);font-weight:600;text-align:center}
+details.thr{font-size:11px;color:var(--t3)}details.thr summary{cursor:pointer}
+/* detail */
+.dh{padding:16px 18px;margin-bottom:12px}
+.dh1{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.dbs{display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap}
+.meta{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 4px;font-size:11px;color:var(--t2)}.meta b{display:block;color:var(--t1);font-size:12px}
+.pipe{display:flex;margin:16px 0 8px}
+.pn{flex:1;text-align:center;position:relative}
+.pn::before{content:"";position:absolute;top:13px;left:-50%;right:50%;height:3px;background:var(--bd2)}
+.pn:first-child::before{display:none}
+.pn.done::before,.pn.cur::before{background:var(--g)}
+.pc{width:28px;height:28px;border-radius:50%;margin:0 auto;border:2px solid var(--bd2);background:var(--bg2);display:grid;place-items:center;position:relative;z-index:1;font-size:11px;font-weight:700}
+.pn.done .pc{background:var(--g);border-color:var(--g);color:#fff}
+.pn.cur .pc{border-color:var(--ac);color:var(--ac2);box-shadow:0 0 0 4px var(--acbg);animation:glow 2s infinite}
+.pn.bad .pc{border-color:var(--r);color:var(--r);box-shadow:0 0 0 4px var(--rbg)}
+.pl{font-size:10px;margin-top:6px;font-weight:600}.po{font-size:9px;color:var(--t3)}
+.bn{padding:9px 14px;border-radius:10px;background:var(--rbg);border:1px dashed var(--r);color:var(--r);font-weight:600;margin-top:8px;font-size:12px}
+.bn.am{background:var(--ambg);border-color:var(--am);color:var(--am)}.bn.in{background:var(--acbg);border-color:var(--ac);color:var(--ac2)}
+.wgs{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin:12px 0}
+.wg{padding:12px 14px;border:1px solid var(--bd);border-radius:10px;background:var(--card)}
+.wt{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px}
+.wv{font-size:20px;font-weight:800}
+.bar{height:6px;background:var(--bd2);border-radius:3px;overflow:hidden;margin:8px 0 4px}
+.bar i{display:block;height:100%;background:var(--g);transition:width 1s}.bar i.warn{background:var(--am)}.bar i.bad{background:var(--r)}
+.pips{display:flex;gap:8px;margin-bottom:8px}
+.pip{width:26px;height:26px;border-radius:50%;border:2px solid var(--bd2);display:grid;place-items:center;font-size:11px;font-weight:700}
+.pip.miss{background:var(--r);border-color:var(--r);color:#fff;animation:glow 1.8s infinite}
+.route{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px}
+.hop{padding:6px 9px;border-radius:8px;border:1px solid var(--bd2);font-size:11px;font-weight:600;display:flex;flex-direction:column}
+.hop small{font-size:9px;font-weight:500;color:var(--t3)}
+.hop.rej{border-color:var(--r);background:var(--rbg);color:var(--r)}.hop.rej span{text-decoration:line-through}
+.hop.cur{border-color:var(--am);background:var(--ambg);animation:glow 2s infinite}
+.hop.acc{border-color:var(--g);background:var(--gbg)}.hop.next{border-color:var(--ac);background:var(--acbg)}
+.arr{color:var(--t3);font-style:normal}
+.ap{padding:14px 16px;border:1px solid rgba(14,165,233,.3);border-radius:12px;background:var(--acbg);margin-bottom:12px}
+.ap .hint{font-size:12px;color:var(--t2);margin:4px 0 10px}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.btn{padding:8px 14px;border-radius:8px;border:1px solid var(--bd2);background:var(--card);color:var(--t1);font-weight:600;font-size:12px;transition:.15s}
+.btn:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.15)}.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.primary{background:var(--ac);border-color:var(--ac);color:#fff}.btn.green{background:var(--g);border-color:var(--g);color:#fff}
+.btn.danger{background:var(--rbg);border-color:var(--r);color:var(--r)}.btn.sm{padding:5px 10px;font-size:11px}
+.lock{padding:10px 14px;border-radius:10px;background:var(--ambg);border:1px solid var(--am);color:var(--am);margin-bottom:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12px}
+.closure{border:1px solid var(--pu);background:var(--pubg);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.closure h3{font-size:13px;color:var(--pu)}.closure p{font-size:12px;color:var(--t2);margin:4px 0}
+.seal{border:1px solid var(--g);background:var(--gbg);border-radius:12px;padding:14px 16px;margin-bottom:12px;font-size:12px}
+.inp{width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--bd2);background:var(--bg2);color:var(--t1);font:inherit;margin:6px 0}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--bd)}
+.tb{padding:9px 14px;border:0;background:none;color:var(--t3);font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tb.on{color:var(--ac2);border-color:var(--ac2)}
+.pane{padding:16px 4px}
+.tl{position:relative;padding:0 0 14px 20px;border-left:2px solid var(--bd2);margin-left:5px}
+.tl::before{content:"";position:absolute;left:-6px;top:4px;width:10px;height:10px;border-radius:50%;background:var(--g);border:2px solid var(--bg)}
+.tl.new::before{background:var(--ac);animation:glow 2s infinite}
+.tl .ts{font-size:10px;color:var(--t3)}.tl .tt{font-size:12px;margin:2px 0}
+.bigrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.bi{padding:16px;border:1px solid var(--bd);border-radius:12px;background:var(--card)}
+.bi.ar{direction:rtl;text-align:right}
+.bi .lg{font-size:10px;font-weight:700;color:var(--t3);letter-spacing:.6px;text-transform:uppercase;margin-bottom:8px}
+.bi .bt{font-size:15px;font-weight:700;margin-bottom:8px}.bi p{font-size:12.5px;color:var(--t2);line-height:1.8;margin-bottom:10px}
+.bi .ba{font-size:11px;color:var(--ac);font-weight:500;margin-bottom:8px}.bi .bd{font-size:10px;color:var(--t3);padding-top:9px;border-top:1px solid var(--bd)}
+pre{background:var(--bg2);border:1px solid var(--bd);border-radius:10px;padding:14px;font-size:11px;overflow:auto;color:var(--t2);max-height:420px}
+.disc{font-size:11px;color:var(--t3);line-height:1.6;padding:10px 14px;border:1px solid var(--bd);border-radius:10px;margin-top:18px}
+.off-card{padding:24px;line-height:1.8}.off-card h3{color:var(--r);margin-bottom:6px}
+/* agent panel */
+.ah{padding:14px 15px;border-bottom:1px solid var(--bd);display:flex;gap:10px;align-items:center}
+.ah b{font-size:13px}
+#scanstat{padding:8px 15px;font-size:11px;color:var(--t2);border-bottom:1px solid var(--bd)}
+#log{flex:1;overflow-y:auto;padding:8px}
+.ll{font:10px/1.6 'JetBrains Mono',monospace;padding:4px 8px;border-left:2px solid var(--bd2);background:var(--card);border-radius:0 4px 4px 0;margin-bottom:3px;animation:fadeUp .3s;color:var(--t2)}
+.ll.info{border-color:var(--ac)}.ll.success{border-color:var(--g)}.ll.warn{border-color:var(--am)}.ll.error{border-color:var(--r)}.ll.action{border-color:var(--pu)}
+.ac{padding:10px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:6px}
+.ac .btn{width:100%;text-align:left}
+.ac label{font-size:11px;color:var(--t2);display:flex;gap:6px;align-items:center}
+/* toasts */
+#toasts{position:fixed;top:62px;right:16px;z-index:99;display:flex;flex-direction:column;gap:8px;max-width:340px}
+.ts-i{background:var(--card);border:1px solid var(--bd2);border-left:3px solid var(--ac);border-radius:10px;padding:11px 14px;box-shadow:0 8px 32px rgba(0,0,0,.4);animation:slideIn .3s}
+.ts-i.error{border-left-color:var(--r)}.ts-i.warn{border-left-color:var(--am)}.ts-i.success{border-left-color:var(--g)}.ts-i.action{border-left-color:var(--pu)}
+.ts-i b{display:block;font-size:12px}.ts-i span{font-size:11px;color:var(--t2)}
+@media(max-width:1100px){
+ body{height:auto;overflow:auto}#top{position:sticky}
+ #shell{position:static;display:block}#side,#main{overflow:visible}#agent{height:420px;border-left:0}
+ #kpi{grid-template-columns:repeat(2,1fr)}.bigrid{grid-template-columns:1fr}
 }
 </style>
 </head>
 <body>
-
-<!-- TOAST -->
-<div id="toast">
-  <button class="toast-close" onclick="closeToast()">x</button>
-  <div class="toast-title">Clinical Guardrail Triggered</div>
-  <div class="toast-body" id="toastMsg"></div>
+<div id="top">
+  <div class="logo">Zero<span>Drop</span></div>
+  <div id="pill" class="pill"><span class="dot"></span><span id="pilltxt">CONNECTING</span></div>
+  <span class="sp"></span>
+  <span id="clock" class="mono"></span>
+  <button class="ib" id="themeBtn" onclick="toggleTheme()" title="Toggle theme">&#9790;</button>
 </div>
-
-<!-- TOPBAR -->
-<div id="topbar">
-  <div class="top-logo">Zero<span>Drop</span></div>
-  <div class="status-pill">
-    <div class="status-dot"></div>
-    Malaffi FHIR v4 &middot; Simulated &middot; ADHICS Aligned
-  </div>
-  <div class="top-spacer"></div>
-  <div class="nav-tabs">
-    <button class="nav-btn active" onclick="switchView('ops',this)">System Ops</button>
-    <button class="nav-btn" onclick="switchView('clinical',this)">Clinical Inbox</button>
-    <button class="nav-btn" onclick="switchView('patient',this)">Patient Portal</button>
-    <button class="nav-btn" onclick="switchView('analytics',this)">Analytics</button>
-  </div>
-  <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn" title="Toggle theme">&#9790;</button>
-</div>
-
-<!-- SHELL -->
+<div id="toasts"></div>
 <div id="shell">
-
-<!-- ══ SIDEBAR ═══════════════════════════════════════════ -->
-<div id="sidebar">
-  <div class="sb-section">
-    <div class="sb-label">Cases</div>
-    <button class="sb-item active" onclick="selectCase(0);switchView('ops',null)">
-      <span>ZD-901</span><span class="badge badge-amber">SLA</span>
-    </button>
-    <button class="sb-item" onclick="selectCase(1);switchView('ops',null)">
-      <span>ZD-902</span><span class="badge badge-red">!</span>
-    </button>
-    <button class="sb-item" onclick="selectCase(2);switchView('ops',null)">
-      <span>ZD-903</span><span class="badge badge-green">OK</span>
-    </button>
-    <button class="sb-item" onclick="selectCase(3);switchView('ops',null)">
-      <span>ZD-904</span><span class="badge badge-amber">!</span>
-    </button>
-  </div>
-  <div class="sb-divider"></div>
-  <div class="sb-section">
-    <div class="sb-label">Views</div>
-    <button class="sb-item" onclick="switchView('ops',this)"><span>Ops Center</span></button>
-    <button class="sb-item" onclick="switchView('clinical',this)"><span>Clinical Inbox</span></button>
-    <button class="sb-item" onclick="switchView('patient',this)"><span>Patient Portal</span></button>
-    <button class="sb-item" onclick="switchView('analytics',this)"><span>Analytics</span></button>
-  </div>
-  <div class="sb-footer">
-    <div class="sb-stat"><span class="sk">Open</span><span class="sv" id="sb-open">4</span></div>
-    <div class="sb-stat"><span class="sk">Breaches</span><span class="sv" style="color:var(--red)" id="sb-breach">2</span></div>
-    <div class="sb-stat"><span class="sk">Closed today</span><span class="sv" style="color:var(--green)" id="sb-closed">0</span></div>
-  </div>
+  <aside id="side">
+    <div class="side-t">Live case queue</div>
+    <div id="cl"></div>
+  </aside>
+  <main id="main">
+    <div id="kpi"></div>
+    <section id="wd" class="wd"></section>
+    <section id="detail"></section>
+    <div class="disc"><b>Regulatory notice.</b> ZeroDrop is an operational workflow orchestration and SLA tracking platform. It is not a Software as a Medical Device (SaMD) and makes no clinical diagnoses. All "AI" is deterministic, threshold-based and explainable. Patient identifiers are tokenised; no raw Emirates IDs or MRNs are stored. Designed for alignment with UAE PDPL (Federal Decree-Law No. 45 of 2021) and ADHICS. All Malaffi HIE integrations are simulated.</div>
+  </main>
+  <aside id="agent">
+    <div class="ah"><span class="dot g"></span><b>Agent activity</b></div>
+    <div id="scanstat">Waiting for first scan&hellip;</div>
+    <div id="log"></div>
+    <div class="ac">
+      <label>Acting as <input id="actor" class="inp" style="margin:0" value="Care Navigator"></label>
+      <button class="btn sm" onclick="scan(true)">&#9654; Run watchdog scan</button>
+      <button class="btn sm" onclick="agentCall('/agent/simulate_rejection/'+sel,'Rejection simulated')">&#127973; Simulate capacity rejection (selected)</button>
+      <button class="btn sm" onclick="agentCall('/agent/trigger_sla_breach/'+sel,'SLA breach triggered')">&#9201; Trigger SLA breach (selected)</button>
+      <button class="btn sm danger" onclick="resetDemo()">&#8635; Reset demo data</button>
+      <label><input type="checkbox" id="auto" checked> Auto-scan every 20s</label>
+    </div>
+  </aside>
 </div>
-
-<!-- ══ MAIN ══════════════════════════════════════════════ -->
-<div id="main">
-
-<div class="disclaimer">
-  <strong>Operational Tool Only:</strong> ZeroDrop is a workflow orchestration and SLA tracking engine — not a Software as a Medical Device (SaMD). All clinical decisions remain with licensed healthcare professionals. Patient identifiers are tokenised. Designed for alignment with UAE PDPL Decree-Law No. 45/2021 and ADHICS. All Malaffi integrations are simulated.
-</div>
-
-<!-- ═══════════════ SYSTEM OPS VIEW ═══════════════════ -->
-<div class="view active" id="view-ops">
-
-  <div class="page-title">System Ops Center</div>
-  <div class="page-sub">End-to-end pipeline &middot; SLA monitoring &middot; Deterministic agentic routing</div>
-
-  <div class="hero">
-    <div class="hero-num" id="heroNum">4</div>
-    <div>
-      <div class="hero-label">Active results awaiting loop closure</div>
-      <div class="hero-sub">Each open case is an actionable screening result with no verified closure. Loop integrity requires every result to reach CLOSED &amp; VERIFIED with an evidence bundle on record.</div>
-      <div class="btn-row" style="margin-top:14px">
-        <button class="btn btn-primary" onclick="runAgentScan()">Run Agent Scan</button>
-        <button class="btn btn-secondary" onclick="simulateRejection()">Simulate Rejection</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="kpi-grid">
-    <div class="kpi"><div class="kpi-label">Mean Time to Notify</div><div class="kpi-val" style="color:var(--accent)">4.2h</div><div class="kpi-delta up">↓ 38% vs baseline</div></div>
-    <div class="kpi"><div class="kpi-label">Referral Conversion</div><div class="kpi-val" style="color:var(--green)">81%</div><div class="kpi-delta up">↑ 14pp vs baseline</div></div>
-    <div class="kpi"><div class="kpi-label">SLA Breach Rate</div><div class="kpi-val" style="color:var(--amber)" id="kpi-breach">11%</div><div class="kpi-delta down">↑ 2pp (amber)</div></div>
-    <div class="kpi"><div class="kpi-label">Agent Re-routes</div><div class="kpi-val" style="color:var(--green)">24</div><div class="kpi-delta up">drop-offs prevented</div></div>
-    <div class="kpi"><div class="kpi-label">Unverified Closures</div><div class="kpi-val" style="color:var(--green)">0</div><div class="kpi-delta up">closure lock enforced</div></div>
-    <div class="kpi"><div class="kpi-label">Patient Reassurance Index</div><div class="kpi-val" style="color:var(--green)">4.6<span style="font-size:14px;font-weight:400">/5</span></div><div class="kpi-delta up">↑ 0.4 this month</div></div>
-  </div>
-
-  <div class="section-label">Pipeline — Cases by Stage</div>
-  <div class="pipeline" id="pipelineView"></div>
-
-  <div class="section-label">Case Inspector</div>
-  <div id="caseDetailArea"></div>
-
-</div>
-
-<!-- ═══════════════ CLINICAL INBOX VIEW ═══════════════ -->
-<div class="view" id="view-clinical">
-  <div class="page-title">Clinical Inbox</div>
-  <div class="page-sub">High-priority and SLA-critical cases requiring physician action only</div>
-  <div id="clinicalInbox"></div>
-</div>
-
-<!-- ═══════════════ PATIENT PORTAL VIEW ═══════════════ -->
-<div class="view" id="view-patient">
-  <div style="max-width:600px;margin:0 auto">
-    <div class="page-title" style="text-align:center">Your Care Status</div>
-    <div class="page-sub" style="text-align:center">Abu Dhabi Health Services &middot; Secure Patient Portal</div>
-    <div class="disclaimer" style="text-align:center;margin-bottom:16px">
-      This portal gives you information about your result and next steps.<br>Your doctor makes all medical decisions. No diagnosis is made here.
-    </div>
-    <div id="patientLookup">
-      <div class="card" style="text-align:center;padding:28px">
-        <div style="font-size:14px;font-weight:600;margin-bottom:4px">Enter your secure access token</div>
-        <div style="font-size:11px;color:var(--text-3);margin-bottom:16px">You received this in your notification message</div>
-        <input class="text-in" id="ptTokenInput" placeholder="e.g. PT-7731-A" style="margin-bottom:10px;text-align:center">
-        <div style="font-size:10px;color:var(--text-3);margin-bottom:14px">Demo tokens: PT-7731-A &nbsp;&middot;&nbsp; PT-9942-B &nbsp;&middot;&nbsp; PT-5513-C &nbsp;&middot;&nbsp; PT-2287-D</div>
-        <button class="btn btn-primary" onclick="patientLookup()" style="width:100%;justify-content:center">Access My Results</button>
-      </div>
-    </div>
-    <div id="patientView" style="display:none"></div>
-  </div>
-</div>
-
-<!-- ═══════════════ ANALYTICS VIEW ════════════════════ -->
-<div class="view" id="view-analytics">
-  <div class="page-title">Analytics &amp; Impact Dashboard</div>
-  <div class="page-sub">Synthetic cohort &middot; Baseline vs ZeroDrop &middot; False-alarm rates reported honestly</div>
-
-  <div class="kpi-grid" style="margin-bottom:22px">
-    <div class="kpi"><div class="kpi-label">Time to Notify — Baseline</div><div class="kpi-val" style="color:var(--red)">6.8h</div><div class="kpi-delta">Before ZeroDrop</div></div>
-    <div class="kpi"><div class="kpi-label">Time to Notify — ZeroDrop</div><div class="kpi-val" style="color:var(--green)">4.2h</div><div class="kpi-delta up">↓ 38%</div></div>
-    <div class="kpi"><div class="kpi-label">False Positive Escalations</div><div class="kpi-val" style="color:var(--amber)">3.2%</div><div class="kpi-delta">Threshold: 95%</div></div>
-    <div class="kpi"><div class="kpi-label">Referral Completion</div><div class="kpi-val" style="color:var(--green)">81%<span style="font-size:14px;font-weight:400;color:var(--text-3)"> / 67%</span></div><div class="kpi-delta up">vs 67% baseline</div></div>
-  </div>
-
-  <div class="analytics-2col">
-    <div class="card">
-      <div class="section-label">Time to Notification by Pathway (hours)</div>
-      <div class="bar-chart">
-        <div class="bar-row"><div class="bar-label">Beta-Thalassemia</div><div class="bar-track"><div class="bar-fill" style="width:50%;background:var(--accent)"></div></div><div class="bar-val">3.1h</div></div>
-        <div class="bar-row"><div class="bar-label">BRCA1 Mammography</div><div class="bar-track"><div class="bar-fill" style="width:68%;background:var(--accent)"></div></div><div class="bar-val">4.8h</div></div>
-        <div class="bar-row"><div class="bar-label">Newborn Metabolic</div><div class="bar-track"><div class="bar-fill" style="width:30%;background:var(--green)"></div></div><div class="bar-val">1.9h</div></div>
-        <div class="bar-row"><div class="bar-label">Cardiovascular Risk</div><div class="bar-track"><div class="bar-fill" style="width:80%;background:var(--amber)"></div></div><div class="bar-val">5.5h</div></div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="section-label">Referral Conversion by Provider</div>
-      <div class="bar-chart">
-        <div class="bar-row"><div class="bar-label">CCAD Genomics</div><div class="bar-track"><div class="bar-fill" style="width:92%;background:var(--green)"></div></div><div class="bar-val">92%</div></div>
-        <div class="bar-row"><div class="bar-label">Mubadala Health</div><div class="bar-track"><div class="bar-fill" style="width:85%;background:var(--green)"></div></div><div class="bar-val">85%</div></div>
-        <div class="bar-row"><div class="bar-label">SEHA Clinics</div><div class="bar-track"><div class="bar-fill" style="width:74%;background:var(--accent)"></div></div><div class="bar-val">74%</div></div>
-        <div class="bar-row"><div class="bar-label">Private Network</div><div class="bar-track"><div class="bar-fill" style="width:61%;background:var(--amber)"></div></div><div class="bar-val">61%</div></div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="section-label">Model Calibration Report</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
-        <div class="card-sm"><div style="font-size:10px;color:var(--text-3)">Sensitivity</div><div style="font-size:16px;font-weight:700;color:var(--green)">94.1%</div></div>
-        <div class="card-sm"><div style="font-size:10px;color:var(--text-3)">Specificity</div><div style="font-size:16px;font-weight:700;color:var(--green)">91.3%</div></div>
-        <div class="card-sm"><div style="font-size:10px;color:var(--text-3)">False Alarm Rate</div><div style="font-size:16px;font-weight:700;color:var(--amber)">3.2%</div></div>
-        <div class="card-sm"><div style="font-size:10px;color:var(--text-3)">Alert Fatigue Index</div><div style="font-size:16px;font-weight:700;color:var(--green)">Low</div></div>
-        <div class="card-sm"><div style="font-size:10px;color:var(--text-3)">Data Latency</div><div style="font-size:16px;font-weight:700">&lt; 90s</div></div>
-        <div class="card-sm"><div style="font-size:10px;color:var(--text-3)">Missing Data</div><div style="font-size:16px;font-weight:700;color:var(--green)">Flagged</div></div>
-      </div>
-    </div>
-    <div class="card">
-      <div class="section-label">Equitable Reach — Language Groups</div>
-      <div class="bar-chart">
-        <div class="bar-row"><div class="bar-label">Arabic</div><div class="bar-track"><div class="bar-fill" style="width:88%;background:var(--green)"></div></div><div class="bar-val">88%</div></div>
-        <div class="bar-row"><div class="bar-label">English</div><div class="bar-track"><div class="bar-fill" style="width:91%;background:var(--green)"></div></div><div class="bar-val">91%</div></div>
-        <div class="bar-row"><div class="bar-label">Urdu</div><div class="bar-track"><div class="bar-fill" style="width:79%;background:var(--accent)"></div></div><div class="bar-val">79%</div></div>
-        <div class="bar-row"><div class="bar-label">Hindi</div><div class="bar-track"><div class="bar-fill" style="width:76%;background:var(--accent)"></div></div><div class="bar-val">76%</div></div>
-        <div class="bar-row"><div class="bar-label">Tagalog</div><div class="bar-track"><div class="bar-fill" style="width:71%;background:var(--amber)"></div></div><div class="bar-val">71%</div></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card" style="margin-top:4px">
-    <div class="section-label">Drop-off Root Causes — This Month</div>
-    <div class="bar-chart">
-      <div class="bar-row"><div class="bar-label">No appointment booked</div><div class="bar-track"><div class="bar-fill" style="width:72%;background:var(--red)"></div></div><div class="bar-val">72%</div></div>
-      <div class="bar-row"><div class="bar-label">Referral rejected</div><div class="bar-track"><div class="bar-fill" style="width:48%;background:var(--amber)"></div></div><div class="bar-val">48%</div></div>
-      <div class="bar-row"><div class="bar-label">Patient unreachable</div><div class="bar-track"><div class="bar-fill" style="width:35%;background:var(--accent)"></div></div><div class="bar-val">35%</div></div>
-      <div class="bar-row"><div class="bar-label">Wrong specialty</div><div class="bar-track"><div class="bar-fill" style="width:22%;background:var(--purple)"></div></div><div class="bar-val">22%</div></div>
-      <div class="bar-row"><div class="bar-label">Owner unassigned</div><div class="bar-track"><div class="bar-fill" style="width:18%;background:var(--green)"></div></div><div class="bar-val">18%</div></div>
-    </div>
-  </div>
-</div>
-
-</div><!-- /main -->
-
-<!-- ══ AGENT PANEL ════════════════════════════════════════ -->
-<div id="agent-panel">
-  <div class="ap-header">
-    <div class="ap-pulse"></div>
-    <div>
-      <div class="ap-title">Agent Telemetry</div>
-      <div class="ap-sub">Deterministic Watchdog v3.1</div>
-    </div>
-  </div>
-  <div id="agent-log"></div>
-  <div class="ap-controls">
-    <button class="ap-btn primary" onclick="runAgentScan()">Run Full Agent Scan</button>
-    <button class="ap-btn" onclick="triggerSLABreach()">Trigger SLA Breach Alert</button>
-    <button class="ap-btn" onclick="simulateRejection()">Simulate Provider Rejection</button>
-  </div>
-</div>
-
-</div><!-- /shell -->
 
 <script>
-'use strict';
+const API=new URLSearchParams(location.search).get('api')||((location.protocol.indexOf('http')===0&&location.port==='8000')?'':'https://zerodrop-blc7.onrender.com');
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const STG=["Result Issued","Patient Notified","Escalated: Unreachable","Acknowledged","Clinician Consult","Referral Accepted","Closed & Verified"];
+const OWN=["Lab Director","Patient Navigator","Call Centre Coordinator","Patient","Primary Physician","Specialist Coordinator","Case Owner"];
+const EVID=["Confirmatory laboratory result attached","Specialist appointment attended and documented","Clinician discharge summary uploaded to Malaffi","Patient declined - informed refusal on record","Referred to specialist - case formally transferred"];
+const ICON={MISSED_APPOINTMENT:'&#128197;',DELAYED_PROCEDURE:'&#9201;',INCOMPLETE_HANDOFF:'&#128279;',CLINIC_BOTTLENECK:'&#127973;',DROPOFF_RISK:'&#128201;'};
+const RULE={
+ DROPOFF_RISK:'Additive score of weighted operational signals (missed calls, no-shows, age, silence, SLA pressure, dwell, ownership, rejections), capped at 95%.',
+ MISSED_APPOINTMENT:'Appointment time passed without attendance, or the case is in MISSED_APPOINTMENT_RECOVERY.',
+ DELAYED_PROCEDURE:'Hours in the current stage exceeded that stage\'s dwell limit (see thresholds).',
+ INCOMPLETE_HANDOFF:'Owner has not accepted after 30 min, a referral is unanswered beyond the response limit, or the provider chain is exhausted.',
+ CLINIC_BOTTLENECK:'A provider rejected one or more referrals for capacity.'};
+let cases=[],ai={alerts:[],thresholds:{},engine:''},sel=null,tab='tl',online=false,busy=false,lastSig='',lastSync=null,drafts={},openWhy={};
 
-const API_URL = 'https://zerodrop-blc7.onrender.com';
-
-const STAGES = ['ISSUED','PATIENT_NOTIFIED','OFFLINE_FALLBACK','PATIENT_ACKNOWLEDGED','CLINICIAN_CONSULT','REFERRAL_ACCEPTED','CLOSED_VERIFIED'];
-const STAGE_LABELS = ['Result Issued','Patient Notified','Call Center Escalation','Acknowledged','Clinician Consult','Referral Accepted','Closed & Verified'];
-const STAGE_OWNERS = ['Lab Director','Patient Navigator','Call Centre Coordinator','Patient','Primary Physician','Specialist Coordinator','Case Owner'];
-
-let CASES = [];
-let FHIR_PAYLOADS = {};
-let BILINGUAL = {};
-let selectedCase = 0;
-let isDark = true;
-
-// ═══════════════════════════════════════
-//  API INTEGRATION (The "Mind" Backend)
-// ═══════════════════════════════════════
-
-async function fetchCases() {
-    try {
-        const res = await fetch(`${API_URL}/cases`);
-        if (!res.ok) throw new Error("Network response was not ok");
-        CASES = await res.json();
-        
-        // Populate local caches from backend
-        CASES.forEach(c => {
-            if (c.fhir_payload) FHIR_PAYLOADS[c.id] = c.fhir_payload;
-            if (c.bilingual) BILINGUAL[c.id] = c.bilingual;
-        });
-
-        renderAll();
-    } catch (e) {
-        showToast("Error connecting to ZeroDrop API. Ensure FastAPI is running on port 8000.");
-    }
+async function api(path,method,body){
+  const r=await fetch(API+path,{method:method||'GET',headers:{'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+  let d=null;try{d=await r.json()}catch(e){}
+  if(!r.ok){const t=d&&d.detail;throw new Error(typeof t==='string'?t:(Array.isArray(t)?t.map(x=>x.msg).join('; '):'HTTP '+r.status))}
+  return d;
 }
+function log(l,m){const d=document.createElement('div');d.className='ll '+(l||'info');d.innerHTML='<span class="muted">'+new Date().toLocaleTimeString([],{hour12:false})+'</span> '+esc(m);const L=$('#log');L.prepend(d);while(L.children.length>150)L.lastChild.remove()}
+function toast(l,m){const T={error:'Alert',warn:'Warning',success:'Success',action:'Action',info:'Info'};const d=document.createElement('div');d.className='ts-i '+(l||'info');d.innerHTML='<b>'+(T[l]||'Info')+'</b><span>'+esc(m)+'</span>';$('#toasts').appendChild(d);setTimeout(()=>d.remove(),6500)}
+function dur(s){s=Math.max(0,Math.floor(s));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;return h?h+'h '+m+'m':m+'m '+String(x).padStart(2,'0')+'s'}
+function fmtS(s){return s<=0?'OVERDUE':dur(s)}
+function slaCls(c){if(c.stage>=6)return'ok';const f=((c._dl-Date.now())/1000)/(c.sla_total*60);return f<.15?'bad':f<.35?'warn':'ok'}
 
-async function acceptOwnership() {
-    const c = CASES[selectedCase];
-    try {
-        await fetch(`${API_URL}/cases/${c.id}/accept_ownership`, {method: 'POST'});
-        log('success', `AGENT-OWN: ${c.id} · Ownership accepted. Audit created.`);
-        await fetchCases();
-    } catch (e) { showToast("API Error: Cannot accept ownership."); }
+async function refresh(force){
+  try{
+    const r=await Promise.all([api('/cases'),api('/ai/analyze_dropoff_risk')]);
+    const cs=r[0],a=r[1],t=Date.now();cs.forEach(c=>c._dl=t+c.sla_seconds*1000);
+    const was=online;online=true;cases=cs;ai=a;lastSync=t;
+    if(!sel||!cases.some(c=>c.id===sel))sel=(cases.find(c=>ai.alerts.some(x=>x.case_id===c.id))||cases[0]||{}).id||null;
+    const sig=JSON.stringify([cs.map(c=>Object.assign({},c,{sla_seconds:0,hours_in_stage:0,_dl:0})),a.alerts]);
+    if(force||!was||sig!==lastSig){lastSig=sig;render()}
+  }catch(e){if(online||!cases.length){online=false;render()}}
 }
-
-async function acceptOwnershipForCase(idx) {
-    const c = CASES[idx];
-    try {
-        await fetch(`${API_URL}/cases/${c.id}/accept_ownership`, {method: 'POST'});
-        log('success', `AGENT-OWN: ${c.id} · Clinical ownership accepted.`);
-        await fetchCases();
-    } catch (e) { showToast("API Error."); }
+function render(){renderTop();renderKPI();renderSide();renderWd();renderDetail();tick()}
+function renderTop(){$('#pill').className='pill'+(online?'':' off');$('#pilltxt').textContent=online?'LIVE':'API OFFLINE'}
+function renderKPI(){
+  const open=cases.filter(c=>c.stage<6),hi=ai.alerts.filter(a=>a.severity!=='MEDIUM').length;
+  const risk=open.filter(c=>slaCls(c)!=='ok').length,unr=cases.filter(c=>c.stage===2).length,rec=cases.filter(c=>c.branch).length,done=cases.filter(c=>c.stage===6).length;
+  const k=(l,v,s,cl)=>'<div class="card kp"><div class="kl">'+l+'</div><div class="kv '+(cl||'')+'">'+v+'</div><div class="ks">'+s+'</div></div>';
+  $('#kpi').innerHTML=k('Open cases',open.length,'of '+cases.length+' tracked')+k('AI flags',ai.alerts.length,hi+' critical / high',hi?'bad':'ok')+k('SLA at risk',risk,'warning or breach',risk?'warn':'ok')+k('Unreachable / no-show',unr+rec,unr+' escalated &middot; '+rec+' in recovery',(unr+rec)?'bad':'ok')+k('Closed &amp; verified',done,'token + evidence on record','ok');
 }
-
-async function advanceStage() {
-    const c = CASES[selectedCase];
-    if(!c.owner_accepted){showToast('Ownership has not been accepted. A named clinician must accept responsibility.');return;}
-    if(c.stage>=5){showToast('Case is at or beyond Referral Accepted. Use the Closure Lock tab.');return;}
-    
-    // If it's an offline patient, require the specific resolution endpoint
-    if(c.stage === 2 && c.is_offline_patient) {
-        try {
-            await fetch(`${API_URL}/cases/${c.id}/resolve_offline_fallback`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({coordinator: 'Current User'})
-            });
-            log('success', `AGENT-OFFLINE: ${c.id} · Verbal acknowledgement confirmed.`);
-            await fetchCases();
-        } catch (e) { showToast("API Error resolving offline fallback."); }
-        return;
-    }
-
-    try {
-        await fetch(`${API_URL}/cases/${c.id}/advance`, {method: 'POST'});
-        log('action', `AGENT-STAGE: ${c.id} advanced to next stage.`);
-        await fetchCases();
-    } catch (e) { showToast("API Error advancing stage."); }
+function renderSide(){
+  $('#cl').innerHTML=cases.map(c=>{
+    const n=ai.alerts.filter(a=>a.case_id===c.id).length,bad=c.stage===2||c.branch;
+    return '<div class="ci '+c.priority+(c.id===sel?' sel':'')+'" onclick="pick(\''+esc(c.id)+'\')"><div class="r1"><b>'+esc(c.id)+'</b><span class="bdg '+(bad?'r':c.stage===6?'g':'')+'">'+esc(c.state.replace(/_/g,' '))+'</span></div><div class="r2">'+esc(c.pathway)+'</div><div class="r3"><span class="bdg '+(c.priority==='CRITICAL'?'r':c.priority==='HIGH'?'am':'g')+'">'+c.priority+'</span>'+(n?'<span class="bdg pu">&#9873; '+n+' flag'+(n>1?'s':'')+'</span>':'')+(c.stage<6?'<span class="mono sm sla-t" data-dl="'+c._dl+'" data-tot="'+c.sla_total+'"></span>':'')+'</div></div>';
+  }).join('')||'<div class="muted">No cases loaded.</div>';
 }
-
-async function attemptClosure() {
-    const c = CASES[selectedCase];
-    const token = (e('closureTokenInput')||{}).value||'';
-    const evidence = (e('closureEvidenceSelect')||{}).value||'';
-    
-    if(!token.trim().startsWith('MALAFFI-CONF-') || !evidence || evidence === '— Select closure evidence type —'){
-        showToast('Closure blocked: Both a valid Malaffi token (MALAFFI-CONF-XXXX) and evidence type are required.');
-        return;
-    }
-    
-    try {
-        await fetch(`${API_URL}/cases/${c.id}/close`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({token: token, evidence: evidence})
-        });
-        log('success', `AGENT-CLOSE: ${c.id} → CLOSED_VERIFIED · Audit entry created`);
-        await fetchCases();
-    } catch (e) { showToast("API Error closing case."); }
+function renderWd(){
+  const al=ai.alerts,th=ai.thresholds||{},n=s=>al.filter(a=>a.severity===s).length;
+  let h='<div class="wd-h"><span class="dot g"></span><h2>Operational AI Watchdog</h2><span class="bdg pu">'+esc(ai.engine||'rules engine')+'</span><span class="sp"></span><span class="muted sm">synced <span id="scanago">now</span></span><button class="btn sm" onclick="scan(true)">Rescan</button></div><div class="sweep"></div>';
+  h+='<div class="chips"><span class="bdg r">'+n('CRITICAL')+' critical</span><span class="bdg r">'+n('HIGH')+' high</span><span class="bdg am">'+n('MEDIUM')+' medium</span></div>';
+  h+=al.length?al.map(alertHTML).join(''):'<div class="card ok-card">&#10003; All clear &mdash; no operational risks detected by the watchdog.</div>';
+  const dw=Object.keys(th.dwell_limit_h||{}).map(k=>esc(STG[k])+': '+th.dwell_limit_h[k]+'h').join(' &middot; ');
+  h+='<details class="thr"><summary>Rule thresholds in force (explainability)</summary><div style="padding:8px 0;line-height:1.8">Elderly age &ge; '+th.elderly_age+' &middot; Alert at &ge; '+th.alert_pct+'% &middot; High at &ge; '+th.high_pct+'% &middot; Max call attempts: '+th.max_call_attempts+'<br>Stage dwell limits &mdash; '+dw+'</div></details>';
+  $('#wd').innerHTML=h;
 }
-
-async function patientAcknowledge(caseId) {
-    try {
-        await fetch(`${API_URL}/cases/${caseId}/patient_acknowledge`, {method: 'POST'});
-        log('success', `AGENT-STAGE: ${caseId} → Patient acknowledged via secure portal`);
-        await fetchCases();
-        
-        const c = CASES.find(x => x.id === caseId);
-        if(c) renderPatientView(c);
-    } catch (e) { showToast("API Error."); }
+function alertHTML(a,i){
+  const p=a.risk_pct,th=ai.thresholds||{};
+  const ring=p!=null?'<div class="ring" style="--p:'+p+'"><b>'+p+'%</b></div>':'<div class="ring" style="--p:100"><b>'+(ICON[a.type]||'&#9873;')+'</b></div>';
+  const fac=(a.factors||[]).map(f=>'<div class="fac"><span>'+esc(f.signal)+' <em>'+esc(f.detail)+'</em></span><div class="fb"><i class="'+(f.weight<0?'neg':'')+'" style="width:'+Math.min(100,Math.abs(f.weight)*2)+'%"></i></div><b>'+(f.weight>0?'+':'')+f.weight+'</b></div>').join('');
+  const note=a.type==='DROPOFF_RISK'?' Alert at &ge; '+th.alert_pct+'%, high at &ge; '+th.high_pct+'%.':'';
+  return '<div class="card al '+a.severity+'">'+ring+'<div class="al-b"><div class="al-t"><span class="bdg '+(a.severity==='MEDIUM'?'am':'r')+'">'+a.severity+'</span>'+esc(a.title)+(a.case_id!=='SYSTEM'?' <button class="btn sm" onclick="pick(\''+esc(a.case_id)+'\')">'+esc(a.case_id)+'</button>':'')+'</div>'+
+   '<div class="al-e">'+esc(a.explanation)+'</div><div class="al-r"><span><b>Recommended action:</b> '+esc(a.recommended_action)+'</span>'+(a.action_key?'<button class="btn sm primary" onclick="runAlert('+i+')">&#9654; Execute</button>':'')+'</div>'+
+   '<details class="why" '+(openWhy[a.id]?'open':'')+' ontoggle="openWhy[ai.alerts['+i+'].id]=this.open"><summary>Why this alert?</summary>'+fac+'<div class="fn"><b>Rule:</b> '+esc(RULE[a.type]||'')+note+'</div></details></div></div>';
 }
-
-async function runAgentScan() {
-    log('info','AGENT-SCAN: Full system scan initiated — checking SLA, ownership, acknowledgements...');
-    try {
-        const res = await fetch(`${API_URL}/agent/scan`, {method: 'POST'});
-        const data = await res.json();
-        
-        data.alerts.forEach(a => {
-            log(a.level, `AGENT-SCAN: ${a.msg}`);
-        });
-        log('success',`AGENT-SCAN: Scan complete — ${data.unverified_closures} unverified closures — ${data.audit}`);
-        if(e('heroNum')) e('heroNum').textContent = data.open_cases;
-    } catch (e) { showToast("API Error during Agent Scan."); }
+function hint(c){
+  if(c.stage===0)return'Result issued but the patient has not been contacted. Dispatch the bilingual notification to start the engagement clock.';
+  if(c.stage===1)return'Log each unanswered call. After 3 attempts the case branches to ESCALATED_UNREACHABLE. If the patient answers, confirm contact.';
+  if(c.stage===2)return'Patient unreachable by phone &mdash; call-centre fallback. Confirm verbal acknowledgement once contact is made, or dispatch a physical navigator.';
+  if(c.stage===3)return'Patient acknowledged. Begin the clinician consult.';
+  if(c.stage===4){
+    if(c.branch)return'No-show recovery: the referral is blocked until a new appointment is booked.';
+    if(c.appointment_status==='NONE')return'Consult in progress. Schedule an appointment (mock slot) before submitting a referral.';
+    if(c.appointment_status==='SCHEDULED')return'Appointment booked. Mark attended, log a no-show, or reschedule.';
+    if(c.referral_status==='NONE')return'Appointment attended. Submit the referral to the next provider in the chain.';
+    if(c.referral_status==='PENDING')return'Awaiting provider response. If capacity is full, rejecting auto-reroutes to the next provider.';
+    if(c.referral_status==='EXHAUSTED')return'Every provider declined. Restart the chain or place the patient manually.';
+  }
+  if(c.stage===5)return'Referral accepted. Only the Closure Lock can advance this case.';
+  return'Case closed and verified.';
 }
-
-async function simulateRejection() {
-    const caseId = 'ZD-902'; 
-    try {
-        log('warn',`AGENT-DROP: Referral for ${caseId} rejected by CCAD Oncology (capacity). Re-routing...`);
-        setTimeout(async () => {
-            await fetch(`${API_URL}/agent/simulate_rejection/${caseId}`, {method: 'POST'});
-            log('action',`AGENT-REROUTE: ${caseId} → Mubadala Oncology Centre · Accepted · SLA reset`);
-            log('success','AGENT-REROUTE: Drop-off prevented. Referral conversion preserved.');
-            showToast(`Provider Rejection Intercepted: ${caseId} was re-routed. SLA reset.`);
-            await fetchCases();
-        }, 1200);
-    } catch (e) { showToast("API Error."); }
+function pipeHTML(c){
+  const tr=[0,1,3,4,5,6],cur=c.stage===2?1:c.stage;
+  return '<div class="pipe">'+tr.map((s,i)=>{
+    let cl=c.stage===6||s<cur?'done':s===cur?'cur':'';
+    if(cl==='cur'&&(c.stage===2||c.branch))cl+=' bad';
+    return '<div class="pn '+cl+'"><div class="pc">'+(cl==='done'?'&#10003;':i+1)+'</div><div class="pl">'+esc(STG[s])+'</div><div class="po">'+esc(OWN[s])+'</div></div>';
+  }).join('')+'</div>';
 }
-
-async function triggerSLABreach() {
-    const c = CASES[selectedCase];
-    try {
-        await fetch(`${API_URL}/agent/trigger_sla_breach/${c.id}`, {method: 'POST'});
-        log('error',`AGENT-SLA: BREACH · ${c.id} · On-call clinician notified`);
-        await fetchCases();
-    } catch (e) { showToast("API Error."); }
+function routeHTML(c){
+  return c.provider_chain.slice(c.referral_start).map((p,i)=>{
+    const g=i+c.referral_start;let cl='',tg='Queued';
+    if(c.rejected_by.indexOf(p)>=0){cl='rej';tg='Capacity full'}
+    else if(g===c.referral_idx&&c.referral_status==='PENDING'){cl='cur';tg='Awaiting response'}
+    else if(g===c.referral_idx&&c.referral_status==='ACCEPTED'){cl='acc';tg='Accepted'}
+    else if(g===c.referral_idx&&c.referral_status!=='EXHAUSTED'){cl='next';tg='Next target'}
+    return '<div class="hop '+cl+'"><span>'+esc(p)+'</span><small>'+tg+'</small></div>';
+  }).join('<i class="arr">&rsaquo;</i>');
 }
-
-// ═══════════════════════════════════════
-//  HELPERS & UI RENDERING
-// ═══════════════════════════════════════
-
-function slaFraction(c){ return Math.max(0,Math.min(1,c.sla_remaining/c.sla_total)); }
-function slaStatus(c){
-    const f=slaFraction(c);
-    if(f<0.15)return'BREACH';
-    if(f<0.35)return'WARNING';
-    return'OK';
+function widgetsHTML(c){
+  const th=ai.thresholds||{},max=th.max_call_attempts||3,rk=ai.alerts.find(a=>a.case_id===c.id&&a.type==='DROPOFF_RISK'),rv=rk?rk.risk_pct:null;
+  let pips='';for(let i=0;i<max;i++)pips+='<div class="pip '+(i<c.missed_calls?'miss':'')+'">'+(i<c.missed_calls?'&#10005;':'')+'</div>';
+  const calls='<div class="wg"><div class="wt">Call attempts</div><div class="pips">'+pips+'</div><div class="sm">'+c.missed_calls+'/'+max+' unanswered &middot; '+c.no_show_count+' no-show(s)'+(c.stage===2?' &middot; <b style="color:var(--r)">escalated</b>':'')+'</div></div>';
+  const stc={SCHEDULED:'am',ATTENDED:'g',MISSED:'r'}[c.appointment_status]||'';
+  const appt='<div class="wg"><div class="wt">Appointment</div>'+(c.appointment_epoch?'<div class="wv" style="font-size:15px">'+esc(c.appointment_label)+'</div><div style="margin-top:6px"><span class="bdg '+stc+'">'+esc(c.appointment_status)+'</span> <span class="sm ap-t" data-ap="'+c.appointment_epoch+'" data-st="'+c.appointment_status+'"></span></div>':'<div class="wv muted">Not scheduled</div><div class="sm muted">Available at Clinician Consult</div>')+'</div>';
+  const rcl={PENDING:'am',ACCEPTED:'g',EXHAUSTED:'r'}[c.referral_status]||'';
+  const ref='<div class="wg" style="grid-column:span 2"><div class="wt">Referral route (capacity bounce)</div><span class="bdg '+rcl+'">'+esc(c.referral_status)+'</span> <span class="sm muted">target: '+esc(c.current_target||'none')+'</span><div class="route">'+routeHTML(c)+'</div></div>';
+  const sla=c.stage<6?'<div class="wg"><div class="wt">SLA clock</div><div class="wv sla-t" data-dl="'+c._dl+'" data-tot="'+c.sla_total+'"></div><div class="bar"><i class="sla-b" data-dl="'+c._dl+'" data-tot="'+c.sla_total+'"></i></div><div class="sm muted">Resets on reroute / reschedule</div></div>':'<div class="wg"><div class="wt">SLA clock</div><div class="wv ok">Closed</div></div>';
+  const hi=th.high_pct||70;
+  const risk='<div class="wg"><div class="wt">Drop-off risk (AI)</div><div class="wv '+(rv==null?'ok':rv>=hi?'bad':'warn')+'">'+(rv==null?'Low':rv+'%')+'</div><div class="bar"><i class="'+(rv>=hi?'bad':rv>=(th.alert_pct||50)?'warn':'')+'" style="width:'+(rv==null?8:rv)+'%"></i></div><div class="sm muted">'+(rv==null?'Below alert threshold':esc(rk.title))+'</div></div>';
+  return '<div class="wgs">'+sla+risk+calls+appt+ref+'</div>';
 }
-function slaDisplay(c){
-    const m=c.sla_remaining;
-    if(m<=0)return'OVERDUE';
-    if(m>=60){const h=Math.floor(m/60);const r=m%60;return r?`${h}h ${r}m`:`${h}h`}
-    return`${m}m`;
+function actionsHTML(c){
+  const lk=!c.owner_accepted,acts=c.available_actions||[];
+  let h='<div class="ap"><b>Contextual actions &mdash; '+esc(STG[c.stage])+(c.branch?' &middot; recovery branch':'')+'</b><div class="hint">'+hint(c)+'</div>';
+  if(lk)h+='<div class="lock"><span><b>&#128274; Ownership not accepted.</b> Workflow actions are blocked until a named clinician accepts responsibility.</span><button class="btn sm primary" onclick="acceptOwn(\''+c.id+'\')">Accept ownership as '+esc(c.owner)+'</button></div>';
+  h+=acts.length?'<div class="btns">'+acts.map(a=>'<button class="btn '+esc(a.style)+'" '+(lk?'disabled title="Accept ownership first"':'')+' onclick="act(\''+c.id+'\',\''+esc(a.key)+'\')">'+esc(a.label)+'</button>').join('')+'</div>':'<div class="muted sm">'+(c.stage===5?'No workflow actions at this stage &mdash; use the Closure Lock below.':'No further actions.')+'</div>';
+  return h+'</div>';
 }
-function slaColour(c){
-    const s=slaStatus(c);
-    return s==='BREACH'?'var(--red)':s==='WARNING'?'var(--amber)':'var(--green)';
+function closureHTML(c){
+  if(c.stage===6)return '<div class="seal"><b style="color:var(--g)">&#10003; CLOSED &amp; VERIFIED</b><div class="mono sm" style="margin-top:6px">Token: '+esc(c.closure_token)+'</div><div class="sm">Evidence: '+esc(c.closure_evidence)+'</div></div>';
+  if(c.stage!==5)return'';
+  const d=drafts[c.id]||{token:'',ev:''};
+  return '<div class="closure"><h3>&#128274; Closure Lock</h3><p>A valid <b>MALAFFI-CONF-</b> token and an evidence type are both mandatory, and ownership must be accepted. Enforced server-side.</p><input id="ctok" class="inp mono" placeholder="MALAFFI-CONF-XXXX" value="'+esc(d.token)+'" oninput="draft(\''+c.id+'\')"><select id="cev" class="inp" onchange="draft(\''+c.id+'\')"><option value="">&mdash; Select closure evidence type &mdash;</option>'+EVID.map(e=>'<option '+(d.ev===e?'selected':'')+'>'+esc(e)+'</option>').join('')+'</select><button class="btn green" onclick="closeCase(\''+c.id+'\')">Verify &amp; close case</button></div>';
 }
-function priorityTagClass(p){ return p==='CRITICAL'?'tag-critical':p==='HIGH'?'tag-high':'tag-normal'; }
-function slaTagClass(c){ const s=slaStatus(c); return s==='BREACH'?'tag-breach':s==='WARNING'?'tag-warn':'tag-ok'; }
-function e(id){return document.getElementById(id)}
-function escHTML(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-
-function log(level,msg){
-    const ts=new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
-    const div=document.createElement('div');
-    div.className=`log-line ${level}`;
-    div.innerHTML=`<span class="log-ts">[${ts}]</span> ${escHTML(msg)}`;
-    const logEl=e('agent-log');
-    if(logEl) { logEl.appendChild(div); logEl.scrollTop=logEl.scrollHeight; }
+function paneHTML(c){
+  if(tab==='tl')return [].concat(c.timeline).reverse().map((e,i)=>'<div class="tl '+(i===0?'new':'')+'"><div class="ts mono">'+esc(e.ts)+' &middot; <span class="bdg">'+esc(STG[e.stage]||'')+'</span></div><div class="tt">'+esc(e.desc)+'</div><div class="muted sm">'+esc(e.actor)+'</div></div>').join('');
+  if(tab==='pt'){
+    const b=c.bilingual||{},can=c.stage===1||c.stage===2;
+    const side=(l,n)=>b[l]?'<div class="bi '+(l==='ar'?'ar':'')+'"><div class="lg">'+n+'</div><div class="bt">'+esc(b[l].title)+'</div><p>'+esc(b[l].body)+'</p><div class="ba">'+esc(b[l].action)+'</div><div class="bd">'+esc(b[l].disclaimer)+'</div></div>':'';
+    return '<div class="bigrid">'+side('en','English')+side('ar','Arabic (RTL)')+'</div><div class="btns" style="align-items:center"><button class="btn green" '+(can?'':'disabled')+' onclick="ack(\''+c.id+'\')">&#10003; Patient confirms: read and understood</button><span class="muted sm">Portal token <code>'+esc(c.patient_token)+'</code> &middot; '+(can?'awaiting patient':'acknowledgement not applicable at this stage')+'</span></div>';
+  }
+  return '<div class="chips"><span class="bdg g">FHIR R4</span><span class="bdg pu">Malaffi (simulated)</span><span class="bdg">Tokenised IDs</span></div><pre>'+esc(JSON.stringify(c.fhir_payload,null,2))+'</pre>';
 }
-
-function showToast(msg){ e('toastMsg').textContent=msg; e('toast').classList.add('show'); clearTimeout(window._toastTimer); window._toastTimer=setTimeout(closeToast,7000); }
-function closeToast(){e('toast').classList.remove('show')}
-
-function toggleTheme(){
-    isDark=!isDark;
-    document.body.classList.toggle('light',!isDark);
-    if(e('themeBtn')) e('themeBtn').innerHTML=isDark?'&#9790;':'&#9728;';
+function renderDetail(){
+  const el=$('#detail'),ae=document.activeElement;
+  if(ae&&el.contains(ae)&&/INPUT|SELECT/.test(ae.tagName))return;
+  const c=cases.find(x=>x.id===sel);
+  if(!c){el.innerHTML=online?'<div class="muted">Loading&hellip;</div>':'<div class="card off-card"><h3>Cannot reach the ZeroDrop API</h3>Expected at <code>'+esc(API||location.origin)+'</code>. Start the backend with <code>uvicorn models:app --reload --port 8000</code> and this page will connect automatically. Use <code>?api=http://host:port</code> for another address.</div>';return}
+  const bad=c.stage===2||!!c.branch;
+  let h='<div class="card dh"><div class="dh1"><div><div class="mono muted sm">'+esc(c.id)+' &middot; '+esc(c.fhir_id)+'</div><h2>'+esc(c.condition)+'</h2><div class="muted">'+esc(c.pathway)+'</div></div><div class="dbs"><span class="bdg '+(c.priority==='CRITICAL'?'r':c.priority==='HIGH'?'am':'g')+'">'+c.priority+'</span><span class="bdg '+(bad?'r':c.stage===6?'g':'')+'">'+esc(c.state.replace(/_/g,' '))+'</span></div></div>';
+  h+='<div class="meta"><span>Case owner<b>'+esc(c.owner)+' '+(c.owner_accepted?'<span class="bdg g">accepted</span>':'<span class="bdg am">pending</span>')+'</b></span><span>Stage owner<b>'+esc(OWN[c.stage])+'</b></span><span>Patient age<b>'+(c.patient_age===0?'Newborn':c.patient_age)+'</b></span><span>Patient token<b class="mono">'+esc(c.patient_token)+'</b></span><span>EID token<b class="mono">'+esc(c.eid)+'</b></span><span>In stage<b>'+c.hours_in_stage+'h</b></span></div>'+pipeHTML(c);
+  if(c.stage===2)h+='<div class="bn">&#9888; ESCALATED_UNREACHABLE &mdash; 3 unanswered calls. Branched to call-centre fallback and priority raised.</div>';
+  if(c.branch)h+='<div class="bn">&#8617; MISSED_APPOINTMENT_RECOVERY &mdash; no-show #'+c.no_show_count+'. Referral is blocked until a new slot is booked.</div>';
+  if(c.referral_status==='EXHAUSTED')h+='<div class="bn">&#9888; Provider chain exhausted &mdash; every provider declined for capacity. Manual placement required.</div>';
+  else if(c.rejected_by.length)h+='<div class="bn am">&#8644; Capacity bounce: '+esc(c.rejected_by.join(', '))+' declined. '+(c.current_target?'Auto-rerouted to '+esc(c.current_target)+'.':'')+'</div>';
+  if(c.navigator_dispatched)h+='<div class="bn in">&#128694; Physical care navigator dispatched and in the field.</div>';
+  h+='</div>'+actionsHTML(c)+closureHTML(c)+widgetsHTML(c);
+  h+='<div class="tabs">'+[['tl','Timeline'],['pt','Patient portal (EN / AR)'],['fh','FHIR payload']].map(t=>'<button class="tb '+(tab===t[0]?'on':'')+'" onclick="setTab(\''+t[0]+'\')">'+t[1]+'</button>').join('')+'</div><div class="pane">'+paneHTML(c)+'</div>';
+  el.innerHTML=h;
 }
-
-function switchView(name,btn){
-    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-    const target = e('view-'+name);
-    if(target) target.classList.add('active');
-    
-    document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
-    if(btn) { btn.classList.add('active'); }
-    else {
-        const map={'ops':0,'clinical':1,'patient':2,'analytics':3};
-        const tabs = document.querySelectorAll('.nav-btn');
-        if(tabs[map[name]||0]) tabs[map[name]||0].classList.add('active');
-    }
+function tick(){
+  const now=Date.now();
+  $('#clock').textContent=new Date().toLocaleTimeString([],{hour12:false});
+  document.querySelectorAll('.sla-t,.sla-b').forEach(e=>{
+    const rem=(+e.dataset.dl-now)/1000,f=rem/(+e.dataset.tot*60),cl=f<.15?'bad':f<.35?'warn':'ok';
+    e.classList.remove('ok','warn','bad');e.classList.add(cl);
+    if(e.classList.contains('sla-b'))e.style.width=Math.max(0,Math.min(100,f*100))+'%';else e.textContent=fmtS(rem);
+  });
+  document.querySelectorAll('.ap-t').forEach(e=>{
+    const d=(+e.dataset.ap-now)/1000;
+    if(e.dataset.st!=='SCHEDULED'){e.textContent='';return}
+    e.textContent=d>0?'starts in '+dur(d):'overdue by '+dur(-d);e.style.color=d>0?'':'var(--r)';
+  });
+  const a=$('#scanago');if(a&&lastSync)a.textContent=Math.round((now-lastSync)/1000)+'s ago';
 }
-
-function trackerHTML(c){
-    let h='<div class="tracker">';
-    STAGES.forEach((s,i)=>{
-        const done=i<c.stage,active=i===c.stage;
-        const nodeCls=done?'done':active?'active':'';
-        const inner=done?'&#10003;':(i+1);
-        const lineCls=i>0&&i<=c.stage?'done':'';
-        h+=i>0?`<div class="trk-line ${lineCls}"></div>`:'';
-        h+=`<div class="trk-step"><div class="trk-node ${nodeCls}">${inner}</div><div class="trk-label">${STAGE_LABELS[i].replace(' ','<br>')}</div></div>`;
-    });
-    return h+'</div>';
+/* ---- handlers ---- */
+function pick(id){sel=id;render()}
+function setTab(t){tab=t;renderDetail()}
+function draft(id){drafts[id]={token:$('#ctok').value,ev:$('#cev').value}}
+function toggleTheme(){const l=document.body.classList.toggle('light');localStorage.setItem('zd-theme',l?'light':'dark');$('#themeBtn').innerHTML=l?'&#9728;':'&#9790;'}
+function runAlert(i){const a=ai.alerts[i];if(!a||!a.action_key)return;if(a.action_key==='accept_ownership')acceptOwn(a.case_id);else act(a.case_id,a.action_key)}
+async function guarded(fn){if(busy)return;busy=true;try{await fn()}finally{busy=false;refresh(true)}}
+function act(id,key){return guarded(async()=>{
+  try{const r=await api('/cases/'+id+'/action','POST',{action:key,actor:($('#actor').value||'Care Navigator')});
+    log(r.level,r.message);if(r.toast)toast(r.level,r.message)}
+  catch(e){log('error',id+' - '+e.message);toast('error',e.message)}
+})}
+function acceptOwn(id){return guarded(async()=>{
+  try{const r=await api('/cases/'+id+'/accept_ownership','POST');log('success',id+' - ownership accepted by '+r.owner);toast('success','Ownership accepted by '+r.owner)}
+  catch(e){log('error',e.message);toast('error',e.message)}
+})}
+function ack(id){return guarded(async()=>{
+  try{await api('/cases/'+id+'/patient_acknowledge','POST');log('success',id+' - patient acknowledged via secure portal');toast('success','Patient acknowledgement recorded')}
+  catch(e){log('error',e.message);toast('error',e.message)}
+})}
+function closeCase(id){return guarded(async()=>{
+  try{await api('/cases/'+id+'/close','POST',{token:$('#ctok').value,evidence:$('#cev').value});
+    delete drafts[id];log('success',id+' - CLOSED & VERIFIED through Closure Lock');toast('success',id+' closed and verified')}
+  catch(e){log('error',id+' - closure blocked: '+e.message);toast('error',e.message)}
+})}
+function agentCall(path,label){if(!sel)return;return guarded(async()=>{
+  try{const r=await api(path,'POST');
+    if(r&&r.message){log(r.level,r.message);if(r.toast)toast(r.level,r.message)}else{log('warn',sel+' - '+label);toast('warn',label)}}
+  catch(e){log('error',e.message);toast('error',e.message)}
+})}
+async function resetDemo(){
+  if(!confirm('Reset all cases to the seed data?'))return;
+  try{await api('/demo/reset','POST');drafts={};log('info','Demo data reset');toast('info','Demo data reset')}catch(e){toast('error',e.message)}
+  refresh(true);
 }
-
-function slaBarHTML(c){
-    const pct=Math.round(slaFraction(c)*100);
-    const col=slaColour(c);
-    return`<div class="sla-bar-wrap">
-      <div style="font-size:11px;color:${col};font-family:'JetBrains Mono',monospace;margin-bottom:4px;">
-        SLA: ${slaDisplay(c)} remaining &nbsp; <span class="tag ${slaTagClass(c)}">${slaStatus(c)}</span>
-      </div>
-      <div class="sla-bar-track"><div class="sla-bar-fill" style="width:${pct}%;background:${col}"></div></div>
-    </div>`;
+async function scan(manual){
+  try{
+    const r=await api('/agent/scan','POST');
+    (r.auto_actions||[]).forEach(m=>{log('warn','AUTO-ACTION: '+m);toast('warn','AUTO-ACTION: '+m)});
+    if(manual)(r.alerts||[]).filter(a=>a.msg.indexOf('AUTO-ACTION')!==0).forEach(a=>log(a.level,a.msg));
+    $('#scanstat').innerHTML=r.open_cases+' open &middot; '+r.smart_alerts+' smart alerts &middot; '+r.unverified_closures+' unverified closures<br><span class="muted">'+esc(r.audit)+'</span>';
+    if(manual)toast('info','Watchdog scan complete: '+r.smart_alerts+' alert(s)');
+  }catch(e){log('error','Scan failed: '+e.message)}
+  refresh(true);
 }
-
-function providerChainHTML(c){
-    let h='<div class="pchain">';
-    (c.provider_chain || []).forEach((p,i)=>{
-        if(i>0)h+='<div class="pchain-arrow">&#8594;</div>';
-        h+=`<div class="pchain-node">${escHTML(p)}</div>`;
-    });
-    return h+'</div>';
-}
-
-function timelineHTML(c){
-    if(!c.timeline || !c.timeline.length)return'<p style="color:var(--text-3);font-size:12px">No events yet.</p>';
-    let h='<div class="tl">';
-    c.timeline.forEach((ev,i)=>{
-        const isLast=i===c.timeline.length-1;
-        h+=`<div class="tl-item">
-          <div class="tl-left">
-            <div class="tl-dot done"></div>
-            ${isLast?'':'<div class="tl-line"></div>'}
-          </div>
-          <div class="tl-content">
-            <div class="tl-title">${escHTML(STAGE_LABELS[ev.stage])}</div>
-            <div class="tl-ts">${escHTML(ev.ts)} &nbsp;&middot;&nbsp; ${escHTML(ev.actor)}</div>
-            <div class="tl-desc">${escHTML(ev.desc)}</div>
-          </div>
-        </div>`;
-    });
-    return h+'</div>';
-}
-
-function renderPipeline(){
-    const wrap=e('pipelineView');
-    if(!wrap) return;
-    wrap.innerHTML='';
-    STAGES.forEach((s,si)=>{
-        const stageCases=CASES.filter(c=>c.stage===si);
-        const col=document.createElement('div');
-        col.className='pipe-col';
-        let cards='';
-        if(!stageCases.length){
-            cards='<div class="pipe-empty">—</div>';
-        } else {
-            stageCases.forEach(c=>{
-                const slaSt=slaStatus(c);
-                const borderCls=slaSt==='BREACH'?'breach-border':slaSt==='WARNING'?'warn-border':'';
-                const selCls=CASES.indexOf(c)===selectedCase?'selected':'';
-                cards+=`<div class="pcase ${borderCls} ${selCls}" onclick="selectCase(${CASES.indexOf(c)})">
-                  <div class="case-id-mono">${escHTML(c.id)}</div>
-                  <div style="font-size:11.5px;font-weight:500;margin:3px 0;line-height:1.3">${escHTML(c.condition.substring(0,45))}</div>
-                  <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
-                    <span class="tag ${priorityTagClass(c.priority)}">${escHTML(c.priority)}</span>
-                    <span style="font-size:10px;color:${slaColour(c)};font-family:'JetBrains Mono',monospace">${slaDisplay(c)}</span>
-                  </div>
-                  <div style="font-size:10px;color:var(--text-3);margin-top:3px">${escHTML(c.owner)}</div>
-                </div>`;
-            });
-        }
-        col.innerHTML=`
-          <div class="pipe-head">
-            <div class="pipe-name">${escHTML(STAGE_LABELS[si])}</div>
-            <div class="pipe-ct">${stageCases.length} case${stageCases.length!==1?'s':''}</div>
-          </div>
-          <div class="pipe-body">${cards}</div>`;
-        wrap.appendChild(col);
-    });
-}
-
-function renderCaseDetail(){
-    if(!CASES || CASES.length === 0) return;
-    const c=CASES[selectedCase];
-    if(!c) return;
-    const area=e('caseDetailArea');
-    if(!area) return;
-
-    const ownBannerCls=c.owner_accepted?'accepted':'pending';
-    const ownText=c.owner_accepted
-      ?`<strong>Ownership Accepted</strong> — ${escHTML(c.owner)}`
-      :`<strong>Ownership Pending</strong> — Assigned to ${escHTML(c.owner)}. Acceptance required before case can advance.`;
-    const ownBtn=c.owner_accepted?'':`<button class="btn btn-green btn-sm" onclick="acceptOwnership()" style="margin-top:8px">Accept Ownership</button>`;
-
-    const closeable=c.stage>=5&&c.stage<6; 
-    const closureLockHTML=buildClosureLock(c,closeable);
-    const fhirJSON=JSON.stringify(FHIR_PAYLOADS[c.id]||{},null,2);
-
-    const advanceBtnHTML = c.stage < 6 
-        ? (c.stage === 2 && c.is_offline_patient 
-            ? `<button class="btn btn-primary btn-sm" onclick="advanceStage()" style="margin-top:12px">Confirm Verbal Acknowledgement &rarr;</button>`
-            : `<button class="btn btn-primary btn-sm" onclick="advanceStage()" style="margin-top:12px">Advance to Next Stage &rarr;</button>`)
-        : '';
-
-    area.innerHTML=`
-    <div class="card" style="padding:0;overflow:hidden">
-      <div style="padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
-        <div style="flex:1">
-          <div class="case-id-mono">${escHTML(c.id)} &nbsp;&middot;&nbsp; ${escHTML(c.eid)} &nbsp;&middot;&nbsp; FHIR: ${escHTML(c.fhir_id)}</div>
-          <div style="font-size:17px;font-weight:700;margin:4px 0">${escHTML(c.condition)}</div>
-          <div style="font-size:12px;color:var(--text-2)">${escHTML(c.pathway)}</div>
-        </div>
-        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
-          <span class="tag ${priorityTagClass(c.priority)}" style="font-size:11px;padding:4px 11px">${escHTML(c.priority)}</span>
-          <span style="font-size:12px;color:${slaColour(c)};font-family:'JetBrains Mono',monospace">SLA: ${slaDisplay(c)}</span>
-          <span style="font-size:11px;color:var(--text-3)">${escHTML(c.owner)}</span>
-        </div>
-      </div>
-      <div style="padding:4px 20px 10px">
-        ${trackerHTML(c)}
-      </div>
-      <div style="padding:0 20px 10px;border-bottom:1px solid var(--border)">
-        <div class="section-label">Malaffi Provider Chain (Simulated)</div>
-        ${providerChainHTML(c)}
-      </div>
-      <div style="padding:12px 20px;border-bottom:1px solid var(--border)">
-        ${slaBarHTML(c)}
-      </div>
-      <div class="tabs">
-        <button class="tab-btn active" onclick="switchTab('tl',this)">Timeline</button>
-        <button class="tab-btn" onclick="switchTab('comms',this)">Patient Comms</button>
-        <button class="tab-btn" onclick="switchTab('own',this)">Ownership</button>
-        <button class="tab-btn" onclick="switchTab('close',this)">Closure Lock</button>
-        <button class="tab-btn" onclick="switchTab('fhir',this)">FHIR Payload</button>
-      </div>
-
-      <div class="tab-pane active" id="tab-tl">
-        ${timelineHTML(c)}
-        ${advanceBtnHTML}
-      </div>
-
-      <div class="tab-pane" id="tab-comms">
-        <div style="font-size:12px;color:var(--text-2);margin-bottom:12px;line-height:1.7">
-          Pre-validated bilingual notifications. Zero hallucination: templates are deterministic, clinically reviewed, and culturally appropriate.
-        </div>
-        ${bilingualHTML(c)}
-        <div id="aiResponseArea"></div>
-        <button class="btn btn-secondary btn-sm" onclick="generateAIMsg()">Generate AI-Tailored Message</button>
-      </div>
-
-      <div class="tab-pane" id="tab-own">
-        <div class="banner ${ownBannerCls}">
-          <div class="banner-title">${c.owner_accepted?'Ownership Accepted':'Ownership Pending Acceptance'}</div>
-          <div class="banner-sub">${ownText}</div>
-        </div>
-        ${ownBtn}
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px">
-          <div class="card-sm"><div class="section-label">Current Owner</div><div style="font-size:13px;font-weight:500">${escHTML(c.owner)}</div></div>
-          <div class="card-sm"><div class="section-label">Stage Owner Role</div><div style="font-size:13px;font-weight:500">${escHTML(STAGE_OWNERS[c.stage])}</div></div>
-        </div>
-      </div>
-
-      <div class="tab-pane" id="tab-close">
-        ${closureLockHTML}
-      </div>
-
-      <div class="tab-pane" id="tab-fhir">
-        <div class="section-label">FHIR R4 Payload</div>
-        <div class="fhir-block">${escHTML(fhirJSON)}</div>
-      </div>
-    </div>`;
-}
-
-function switchTab(name,btn){
-    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-    document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
-    btn.classList.add('active');
-    const pane=e('tab-'+name);
-    if(pane)pane.classList.add('active');
-}
-
-function bilingualHTML(c){
-    const m=BILINGUAL[c.id]||{en:{title:'',body:'',action:'',disc:''},ar:{title:'',body:'',action:'',disc:''}};
-    const en=m.en, ar=m.ar;
-    return`<div class="bi-grid">
-      <div class="bi-side">
-        <div class="bi-lang">English</div>
-        <div class="bi-title">${escHTML(en.title)}</div>
-        <div class="bi-body">${escHTML(en.body)}</div>
-        <div class="bi-action">${escHTML(en.action)}</div>
-        <div class="bi-disc">${escHTML(en.disc)}</div>
-      </div>
-      <div class="bi-side bi-ar">
-        <div class="bi-lang">&#1593;&#1585;&#1576;&#1610;</div>
-        <div class="bi-title">${escHTML(ar.title)}</div>
-        <div class="bi-body">${escHTML(ar.body)}</div>
-        <div class="bi-action">${escHTML(ar.action)}</div>
-        <div class="bi-disc">${escHTML(ar.disc)}</div>
-      </div>
-    </div>`;
-}
-
-const CLOSURE_OPTS = [
-  '— Select closure evidence type —',
-  'Confirmatory laboratory result attached',
-  'Specialist appointment attended and documented',
-  'Clinician discharge summary uploaded to Malaffi',
-  'Patient declined — informed refusal on record',
-  'Referred to specialist — case formally transferred',
-];
-
-function buildClosureLock(c,closeable){
-    if(c.stage===6){
-      return`<div class="banner accepted">
-        <div class="banner-title">Case Verified Closed</div>
-        <div class="banner-sub">Token: <code>${escHTML(c.closure_token)}</code> &nbsp;&middot;&nbsp; Evidence: ${escHTML(c.closure_evidence)}</div>
-      </div>`;
-    }
-    if(!closeable){
-      return`<div class="banner lock">
-        <div class="banner-title">Closure Not Permitted Yet</div>
-        <div class="banner-sub">Case must reach <strong>Referral Accepted</strong> before closure. Current: <strong>${STAGE_LABELS[c.stage]}</strong></div>
-      </div>
-      <div style="font-size:11px;color:var(--text-3);margin-top:8px;line-height:1.6">The closure lock cannot be bypassed.</div>`;
-    }
-    const opts=CLOSURE_OPTS.map(o=>`<option>${escHTML(o)}</option>`).join('');
-    return`
-    <div style="margin-bottom:10px">
-      <div class="field-label">Malaffi Confirmation Token</div>
-      <input class="text-in" id="closureTokenInput" placeholder="MALAFFI-CONF-XXXX">
-    </div>
-    <div style="margin-bottom:12px">
-      <div class="field-label">Closure Evidence Type</div>
-      <select class="select-in" id="closureEvidenceSelect">${opts}</select>
-    </div>
-    <button class="btn btn-green" onclick="attemptClosure()">Close Case</button>`;
-}
-
-function selectCase(idx){
-    selectedCase=idx;
-    document.querySelectorAll('.sb-item').forEach((el,i)=>el.classList.toggle('active',i===idx));
-    renderAll();
-}
-
-function generateAIMsg(){
-    const ar=e('aiResponseArea');
-    if(!ar)return;
-    const c=CASES[selectedCase];
-    ar.innerHTML=`<div class="ai-block">
-      <div class="ai-label">AI Cultural Liaison Agent</div>
-      <div class="ai-loading"><div class="ai-dot"></div><div class="ai-dot"></div><div class="ai-dot"></div></div>
-    </div>`;
-    setTimeout(()=>{
-      ar.innerHTML=`<div class="ai-block">
-        <div class="ai-label">AI Cultural Liaison Agent — Tailored Message</div>
-        <div class="ai-text">Your health team has completed your screening and would like to follow up with you. This is a routine next step. Your navigator will reach out within 48 hours.</div>
-      </div>`;
-      log('action',`AGENT-COMM: AI-tailored message generated for ${c.id}`);
-    },2000);
-}
-
-function renderClinicalInbox(){
-    const inbox=e('clinicalInbox');
-    if(!inbox) return;
-    const priorityCases=CASES.filter(c=>c.stage<6&&(c.priority==='CRITICAL'||c.priority==='HIGH')).sort((a,b)=>a.sla_remaining-b.sla_remaining);
-    if(!priorityCases.length){
-      inbox.innerHTML='<div class="banner accepted"><div class="banner-title">No high-priority cases pending action.</div></div>';
-      return;
-    }
-    let h='';
-    priorityCases.forEach(c=>{
-      const idx=CASES.indexOf(c);
-      const canAck=c.stage===4&&c.owner_accepted;
-      const canHand=c.stage===3&&c.owner_accepted;
-      h+=`<div class="card" style="margin-bottom:14px">
-        <div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:12px">
-          <div>
-            <div class="case-id-mono">${escHTML(c.id)}</div>
-            <div style="font-size:15px;font-weight:700">${escHTML(c.condition)}</div>
-          </div>
-          <div><span class="tag ${priorityTagClass(c.priority)}">${escHTML(c.priority)}</span></div>
-        </div>
-        ${trackerHTML(c)}
-        <div class="btn-row" style="margin-top:12px">
-          ${!c.owner_accepted?`<button class="btn btn-secondary btn-sm" onclick="acceptOwnershipForCase(${idx})">Accept Ownership</button>`:''}
-          <button class="btn ${canHand?'btn-green':'btn-secondary'} btn-sm" ${canHand?'':'disabled'} onclick="advanceStage()">Approve Specialist Handover</button>
-          <button class="btn ${canAck?'btn-primary':'btn-secondary'} btn-sm" ${canAck?'':'disabled'} onclick="advanceStage()">Acknowledge Case</button>
-        </div>
-      </div>`;
-    });
-    inbox.innerHTML=h;
-}
-
-function patientLookup(){
-    const token=(e('ptTokenInput').value||'').trim();
-    const found=CASES.find(c=>c.patient_token===token);
-    if(!found){ showToast('Token not recognised.'); return; }
-    log('info',`AGENT-ACCESS: Patient accessed ${found.id} via secure token`);
-    renderPatientView(found);
-}
-
-function renderPatientView(c){
-    if(e('patientLookup')) e('patientLookup').style.display='none';
-    const pv=e('patientView');
-    if(pv) pv.style.display='block';
-
-    const alreadyAcked=c.stage>=3;
-    const steps=[
-      ['Result confirmed','Your screening result has been processed.',c.timeline[0]?.ts||''],
-      ['You were notified','We sent you a message explaining your result.',c.timeline[1]?.ts||''],
-      ['You confirmed receipt','You acknowledged the message.',c.timeline[2]?.ts||''],
-      ['Clinician review','A doctor has reviewed your result.',c.timeline[3]?.ts||''],
-      ['Specialist referral','We have arranged for you to see a specialist.',c.timeline[4]?.ts||''],
-      ['Your care is complete','Your case is closed.',''],
-    ];
-    let stepsH='<div class="pt-steps">';
-    steps.forEach(([title,desc,ts],i)=>{
-      const isLast=i===steps.length-1;
-      const displayIndex = i; 
-      const done=displayIndex<c.stage,active=displayIndex===c.stage;
-      const numCls=done?'done':active?'active':'';
-      const inner=done?'&#10003;':i+1;
-      stepsH+=`<div class="pt-step">
-        <div class="pt-step-left"><div class="pt-num ${numCls}">${inner}</div>${isLast?'':'<div class="pt-line '+(done?'done':'')+'"></div>'}</div>
-        <div class="pt-content"><div class="pt-title">${escHTML(title)}</div><div class="pt-desc">${escHTML(desc)}</div></div>
-      </div>`;
-    });
-    stepsH+='</div>';
-
-    const ackSection=alreadyAcked
-      ?`<div class="banner accepted"><div class="banner-title">Confirmed</div></div>`
-      :`<button class="btn btn-primary" onclick="patientAcknowledge('${c.id}')" style="width:100%;padding:11px">Acknowledge</button>`;
-
-    if(pv) pv.innerHTML=`
-      <div class="card"><div class="case-id-mono">${escHTML(c.id)}</div><div style="font-size:17px;font-weight:700">${escHTML(c.condition)}</div></div>
-      ${bilingualHTML(c)}
-      <div style="margin-bottom:20px">${ackSection}</div>
-      ${stepsH}
-      <button class="btn btn-secondary" onclick="patientSignOut()">Sign Out</button>`;
-}
-
-function patientSignOut(){
-    if(e('patientLookup')) e('patientLookup').style.display='block';
-    if(e('patientView')) e('patientView').style.display='none';
-    if(e('ptTokenInput')) e('ptTokenInput').value='';
-}
-
-function updateSidebarStats(){
-    if(!CASES) return;
-    const open=CASES.filter(c=>c.stage<6).length;
-    const breaches=CASES.filter(c=>slaStatus(c)==='BREACH').length;
-    const closed=CASES.filter(c=>c.stage===6).length;
-    if(e('sb-open'))e('sb-open').textContent=open;
-    if(e('sb-breach'))e('sb-breach').textContent=breaches;
-    if(e('sb-closed'))e('sb-closed').textContent=closed;
-    if(e('heroNum'))e('heroNum').textContent=open;
-}
-
-function renderAll(){
-    if(CASES.length === 0) return;
-    renderPipeline();
-    renderCaseDetail();
-    renderClinicalInbox();
-    updateSidebarStats();
-}
-
-(function boot(){
-    fetchCases();
-    const msgs=[
-      ['info','AGENT-BOOT: ZeroDrop Deterministic Orchestrator v3.1 initialised via FastAPI Backend'],
-      ['success','MALAFFI-FHIR: Simulated HL7 FHIR v4.0.1 endpoint active'],
-      ['info','ADHICS-AUDIT: Role-based access control active']
-    ];
-    msgs.forEach((m,i)=>setTimeout(()=>log(m[0],m[1]),(i+1)*700));
-})();
+/* ---- boot ---- */
+if(localStorage.getItem('zd-theme')==='light'){document.body.classList.add('light');$('#themeBtn').innerHTML='&#9728;'}
+log('info','ZeroDrop Care Navigator booting. API: '+(API||location.origin));
+log('info','Watchdog: deterministic rules, operational only (no clinical inference).');
+refresh(true);
+setInterval(refresh,5000);
+setInterval(tick,1000);
+setInterval(()=>{if($('#auto').checked&&online)scan(false)},20000);
 </script>
 </body>
 </html>
