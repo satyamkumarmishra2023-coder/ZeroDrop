@@ -1,59 +1,32 @@
 """
-ZeroDrop — Deterministic Screening-to-Care Orchestration Engine
-FastAPI Backend · In-Memory State · 7-Stage Pipeline
+ZeroDrop — models.py (v4 · Dynamic Care Navigator + Operational AI Watchdog)
+Models, contextual state machine, deterministic watchdog rules and FastAPI routes.
+Run:  uvicorn models:app --reload --port 8000
 
-NOT a Software as a Medical Device (SaMD). All clinical decisions remain
-with licensed healthcare professionals. Designed for ADHICS / UAE PDPL
-Decree-Law No. 45/2021 alignment. Malaffi FHIR integrations are simulated.
+Operational tool only: not SaMD, no clinical inference. All "AI" is transparent,
+threshold-based rules (time elapsed, missed calls, dwell limits, rejections).
+Identifiers are tokenised. All Malaffi integrations are simulated.
 """
-
 from __future__ import annotations
-
-import copy
-import uuid
-from datetime import datetime
-from enum import IntEnum
-from typing import Any, Optional
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-# ─────────────────────────────────────────────────────────────
-#  STAGE DEFINITIONS  (7-stage pipeline)
-# ─────────────────────────────────────────────────────────────
-
-class Stage(IntEnum):
-    RESULT_ISSUED           = 0   # Lab result confirmed & FHIR record created
-    PATIENT_NOTIFIED        = 1   # Digital notification dispatched
-    OFFLINE_FALLBACK        = 2   # Escalated to Call Centre (elderly / non-digital)
-    PATIENT_ACKNOWLEDGED    = 3   # Patient confirmed receipt
-    CLINICIAN_CONSULT       = 4   # Primary physician engaged
-    REFERRAL_ACCEPTED       = 5   # Specialist accepted referral
-    CLOSED_VERIFIED         = 6   # Evidence-locked closure
-
-STAGE_LABELS: dict[int, str] = {
-    0: "Result Issued",
-    1: "Patient Notified",
-    2: "Offline Fallback",
-    3: "Patient Acknowledged",
-    4: "Clinician Consult",
-    5: "Referral Accepted",
-    6: "Closed & Verified",
-}
-
-STAGE_OWNERS: dict[int, str] = {
-    0: "Lab Director",
-    1: "Patient Navigator",
-    2: "Call Centre Coordinator",
-    3: "Patient",
-    4: "Primary Physician",
-    5: "Specialist Coordinator",
-    6: "Case Owner",
-}
-
-CLOSURE_OPTS = [
+# ═══════════════ CONSTANTS ═══════════════
+# Stage indices are unchanged (Stage 4 = consult, Stage 6 = closed).
+# Index 2 is now ESCALATED_UNREACHABLE (the former offline-fallback stage).
+STAGES = ["ISSUED", "PATIENT_NOTIFIED", "ESCALATED_UNREACHABLE", "PATIENT_ACKNOWLEDGED",
+          "CLINICIAN_CONSULT", "REFERRAL_ACCEPTED", "CLOSED_VERIFIED"]
+STAGE_DISPLAY = ["Result Issued", "Patient Notified", "Escalated: Unreachable", "Acknowledged",
+                 "Clinician Consult", "Referral Accepted", "Closed & Verified"]
+STAGE_OWNER = ["Lab Director", "Patient Navigator", "Call Centre Coordinator", "Patient",
+               "Primary Physician", "Specialist Coordinator", "Case Owner"]
+MISSED = "MISSED_APPOINTMENT_RECOVERY"          # side-branch of stage 4
+MAX_CALL_ATTEMPTS = 3
+CLOSURE_EVIDENCE_OPTIONS = [
     "— Select closure evidence type —",
     "Confirmatory laboratory result attached",
     "Specialist appointment attended and documented",
@@ -62,864 +35,587 @@ CLOSURE_OPTS = [
     "Referred to specialist — case formally transferred",
 ]
 
-# ─────────────────────────────────────────────────────────────
-#  IN-MEMORY DATA STORE
-# ─────────────────────────────────────────────────────────────
+# Watchdog thresholds (all tunable, all shown to the UI for explainability)
+ELDERLY_AGE = 65
+RISK_ALERT_PCT = 50
+RISK_HIGH_PCT = 70
+OWNER_ACCEPT_MIN = 30
+REFERRAL_RESPONSE_H = 2
+DWELL_LIMIT_H = {0: 1, 1: 4, 2: 8, 3: 6, 4: 24, 5: 48}
+TS_FMT = "%H:%M  %d %b %Y"
 
-_CASES_SEED: list[dict[str, Any]] = [
-    {
-        "id": "ZD-901",
-        "eid": "EID-784-XXXX-XXXX-3",
-        "pathway": "Pre-Marital Genetic Screening",
-        "condition": "Beta-Thalassemia Carrier Status",
-        "stage": 1,
-        "priority": "HIGH",
-        "provider_chain": [
-            "SEHA Central Lab",
-            "Mubadala Health Primary",
-            "CCAD Genomics Centre",
-        ],
-        "sla_remaining": 23,
-        "sla_total": 120,
-        "owner": "Nurse Hessa Al Dhaheri",
-        "owner_accepted": False,
-        "patient_token": "PT-7731-A",
-        "fhir_id": "SR-2026-ZD-901-BTC",
-        "is_offline_patient": False,
-        "timeline": [
-            {
-                "ts": "09:12  09 Nov 2026",
-                "stage": 0,
-                "desc": "Beta-Thalassemia carrier status confirmed. FHIR R4 Observation created and dispatched to Malaffi.",
-                "actor": "SEHA Central Lab — Automated",
-            },
-            {
-                "ts": "09:31  09 Nov 2026",
-                "stage": 1,
-                "desc": "Bilingual SMS and app notification dispatched via Malaffi gateway.",
-                "actor": "Patient Navigator — System",
-            },
-        ],
-        "consult_requested": False,
-        "closure_token": "",
-        "closure_evidence": "",
-    },
-    {
-        "id": "ZD-902",
-        "eid": "EID-784-XXXX-XXXX-7",
-        "pathway": "Breast Cancer Screening Programme",
-        "condition": "BRCA1 — BI-RADS 4 Actionable Finding",
-        "stage": 4,
-        "priority": "CRITICAL",
-        "provider_chain": [
-            "Mubadala Breast Care Centre",
-            "SEHA Primary Care",
-            "CCAD Oncology",
-        ],
-        "sla_remaining": 18,
-        "sla_total": 120,
-        "owner": "Dr. Aisha Khalil",
-        "owner_accepted": True,
-        "patient_token": "PT-9942-B",
-        "fhir_id": "SR-2026-ZD-902-BRCA",
-        "is_offline_patient": False,
-        "timeline": [
-            {
-                "ts": "07:44  09 Nov 2026",
-                "stage": 0,
-                "desc": "BI-RADS 4 finding flagged by radiologist. FHIR DiagnosticReport created.",
-                "actor": "Mubadala Breast Care — Radiologist",
-            },
-            {
-                "ts": "08:01  09 Nov 2026",
-                "stage": 1,
-                "desc": "Secure bilingual priority notification dispatched.",
-                "actor": "Patient Navigator — System",
-            },
-            {
-                "ts": "08:19  09 Nov 2026",
-                "stage": 3,
-                "desc": "Patient confirmed receipt via secure app.",
-                "actor": "Patient — Secure App",
-            },
-            {
-                "ts": "08:35  09 Nov 2026",
-                "stage": 4,
-                "desc": "Oncology consult initiated. Dr. Aisha Khalil accepted ownership.",
-                "actor": "Dr. Aisha Khalil",
-            },
-        ],
-        "consult_requested": False,
-        "closure_token": "",
-        "closure_evidence": "",
-    },
-    {
-        "id": "ZD-903",
-        "eid": "EID-784-XXXX-XXXX-1",
-        "pathway": "Newborn Metabolic Screening",
-        "condition": "Phenylketonuria (PKU) — Elevated Phenylalanine",
-        "stage": 5,
-        "priority": "NORMAL",
-        "provider_chain": [
-            "SEHA Neonatal Lab",
-            "SEHA Paediatrics",
-            "CCAD Metabolic Unit",
-        ],
-        "sla_remaining": 420,
-        "sla_total": 480,
-        "owner": "Dr. Sara Naji",
-        "owner_accepted": True,
-        "patient_token": "PT-5513-C",
-        "fhir_id": "SR-2026-ZD-903-PKU",
-        "is_offline_patient": False,
-        "timeline": [
-            {
-                "ts": "11:00  06 Nov 2026",
-                "stage": 0,
-                "desc": "Elevated phenylalanine on day-3 heel-prick. Auto-escalated.",
-                "actor": "SEHA Neonatal Lab — Automated",
-            },
-            {
-                "ts": "11:15  06 Nov 2026",
-                "stage": 1,
-                "desc": "Parents notified via bilingual report and call.",
-                "actor": "Patient Navigator",
-            },
-            {
-                "ts": "12:40  06 Nov 2026",
-                "stage": 3,
-                "desc": "Parents confirmed understanding and consent.",
-                "actor": "Parent — Secure App",
-            },
-            {
-                "ts": "14:30  07 Nov 2026",
-                "stage": 4,
-                "desc": "Paediatrician e-consult completed. Specialist referral recommended.",
-                "actor": "Dr. Sara Naji",
-            },
-            {
-                "ts": "09:00  08 Nov 2026",
-                "stage": 5,
-                "desc": "CCAD Metabolic Unit accepted referral. Appointment: 12 Nov.",
-                "actor": "CCAD Metabolic Unit — Coordinator",
-            },
-        ],
-        "consult_requested": False,
-        "closure_token": "",
-        "closure_evidence": "",
-    },
-    {
-        "id": "ZD-904",
-        "eid": "EID-784-XXXX-XXXX-9",
-        "pathway": "Adult Comprehensive Screening",
-        "condition": "High Cardiovascular Risk — SCORE2 >= 10%",
-        "stage": 0,
-        "priority": "HIGH",
-        "provider_chain": ["SEHA Wellness Centre", "Mubadala Cardiology"],
-        "sla_remaining": 95,
-        "sla_total": 180,
-        "owner": "Patient Navigator Unit",
-        "owner_accepted": False,
-        "patient_token": "PT-2287-D",
-        "fhir_id": "SR-2026-ZD-904-CVD",
-        "is_offline_patient": False,
-        "timeline": [
-            {
-                "ts": "10:30  09 Nov 2026",
-                "stage": 0,
-                "desc": "10-year cardiovascular risk score flagged. Lifestyle counselling required.",
-                "actor": "SEHA Wellness Centre — Automated",
-            }
-        ],
-        "consult_requested": False,
-        "closure_token": "",
-        "closure_evidence": "",
-    },
-    # ── NEW: Offline / elderly patient demonstrating the OFFLINE_FALLBACK stage ──
-    {
-        "id": "ZD-905",
-        "eid": "EID-784-XXXX-XXXX-5",
-        "pathway": "Adult Comprehensive Screening",
-        "condition": "Elevated HbA1c — Type 2 Diabetes Risk",
-        "stage": 2,
-        "priority": "HIGH",
-        "provider_chain": ["SEHA Primary Care Clinic", "Mubadala Endocrinology"],
-        "sla_remaining": 61,
-        "sla_total": 180,
-        "owner": "Call Centre Coordinator — Unit 4",
-        "owner_accepted": True,
-        "patient_token": "PT-6604-E",
-        "fhir_id": "SR-2026-ZD-905-DM",
-        "is_offline_patient": True,
-        "timeline": [
-            {
-                "ts": "08:00  09 Nov 2026",
-                "stage": 0,
-                "desc": "Elevated HbA1c (8.1%) confirmed. FHIR R4 Observation dispatched to Malaffi.",
-                "actor": "SEHA Primary Care — Automated",
-            },
-            {
-                "ts": "08:14  09 Nov 2026",
-                "stage": 1,
-                "desc": "Digital notification dispatched. Patient profile flagged: no smartphone, age 71.",
-                "actor": "Patient Navigator — System",
-            },
-            {
-                "ts": "08:22  09 Nov 2026",
-                "stage": 2,
-                "desc": "Digital delivery failed — patient not reachable via app. Case auto-escalated to Call Centre (Offline Fallback). Call Centre Coordinator Unit 4 assigned.",
-                "actor": "AGENT-OFFLINE: Deterministic Escalation Rule",
-            },
-        ],
-        "consult_requested": False,
-        "closure_token": "",
-        "closure_evidence": "",
-    },
-]
+DISCLAIMER = ("ZeroDrop is an operational workflow orchestration and SLA tracking platform. It is not a "
+              "Software as a Medical Device (SaMD) and makes no clinical diagnoses. Designed for alignment "
+              "with UAE Federal Decree-Law No. 45 of 2021 (PDPL) and ADHICS. Malaffi integrations are simulated.")
 
-FHIR_PAYLOADS: dict[str, dict] = {
+# ═══════════════ BILINGUAL MESSAGES (pre-validated, non-diagnostic) ═══════════════
+_ACT_EN = "Please confirm below that you have read and understood this message."
+_ACT_AR = "يرجى التأكيد أدناه على أنك قرأت هذه الرسالة وفهمت مضمونها."
+BILINGUAL_MESSAGES: dict = {
     "ZD-901": {
-        "resourceType": "Observation",
-        "id": "SR-2026-ZD-901-BTC",
-        "status": "final",
-        "code": {
-            "coding": [
-                {
-                    "system": "http://snomed.info/sct",
-                    "code": "413427002",
-                    "display": "Beta-thalassemia carrier status",
-                }
-            ]
-        },
-        "subject": {
-            "reference": "Patient/EID-784-XXXX-XXXX-3",
-            "display": "Tokenised Patient",
-        },
-        "effectiveDateTime": "2026-11-09T09:12:00+04:00",
-        "note": [{"text": "FHIR R4 compliant. Malaffi HIE simulated. No raw PII transmitted."}],
+        "en": {"title": "Your Genetic Screening Result",
+               "body": "Your genetic screening has been completed. The result needs a brief conversation with one of our specialists. This does not mean you are unwell. A counselor will explain what this means for you and your family and answer any questions you have. No decision needs to be made today.",
+               "action": _ACT_EN,
+               "disclaimer": "This message is for information only. It does not constitute a diagnosis or medical advice."},
+        "ar": {"title": "نتيجة الفحص الجيني",
+               "body": "تم إجراء الفحص الجيني الخاص بك. تستدعي النتيجة إجراء محادثة مع أحد متخصصينا. لا يعني ذلك أنك مريض. سيشرح لك المستشار ما يعنيه هذا بالنسبة لك ولعائلتك ويجيب على تساؤلاتك. لا حاجة لاتخاذ أي قرار اليوم.",
+               "action": _ACT_AR, "disclaimer": "هذه الرسالة للإعلام فقط. لا تُشكّل تشخيصاً أو نصيحة طبية."},
     },
     "ZD-902": {
-        "resourceType": "DiagnosticReport",
-        "id": "SR-2026-ZD-902-BRCA",
-        "status": "final",
-        "code": {
-            "coding": [
-                {
-                    "system": "http://loinc.org",
-                    "code": "24606-6",
-                    "display": "Mammography screening study",
-                }
-            ]
-        },
-        "subject": {
-            "reference": "Patient/EID-784-XXXX-XXXX-7",
-            "display": "Tokenised Patient",
-        },
-        "effectiveDateTime": "2026-11-09T07:44:00+04:00",
-        "conclusion": "BI-RADS Category 4 — Suspicious. Tissue biopsy recommended.",
+        "en": {"title": "Your Breast Screening Requires Attention",
+               "body": "Your recent breast screening identified a finding our care team would like to discuss with you. This is not a diagnosis. We want to make sure you receive the right follow-up care promptly. Your doctor will contact you within 24 hours to explain the next steps.",
+               "action": _ACT_EN,
+               "disclaimer": "Your privacy is protected. This information is shared only with your authorised care team."},
+        "ar": {"title": "فحص الثدي يحتاج إلى اهتمام",
+               "body": "كشف فحص الثدي الأخير عن نتيجة يود فريق رعايتنا مناقشتها معك. هذا ليس تشخيصاً. نريد التأكد من حصولك على المتابعة المناسبة في الوقت المناسب. سيتصل بك طبيبك خلال 24 ساعة لشرح الخطوات التالية.",
+               "action": _ACT_AR, "disclaimer": "خصوصيتك محمية. تُشارَك هذه المعلومات فقط مع فريق رعايتك المُعتمد."},
     },
     "ZD-903": {
-        "resourceType": "Observation",
-        "id": "SR-2026-ZD-903-PKU",
-        "status": "final",
-        "code": {
-            "coding": [
-                {
-                    "system": "http://snomed.info/sct",
-                    "code": "360257000",
-                    "display": "Phenylalanine measurement",
-                }
-            ]
-        },
-        "subject": {
-            "reference": "Patient/EID-784-XXXX-XXXX-1",
-            "display": "Tokenised Patient",
-        },
-        "valueQuantity": {"value": 18.4, "unit": "mg/dL"},
-        "interpretation": [{"coding": [{"code": "H", "display": "Above reference range"}]}],
+        "en": {"title": "Your Newborn Screening Update",
+               "body": "The newborn screening for your baby has returned a result our paediatric team would like to review with you. This type of finding is common and often requires simple, straightforward steps. A specialist will contact you to arrange a convenient appointment.",
+               "action": _ACT_EN,
+               "disclaimer": "Early follow-up gives your baby the best possible outcome. This message is for information only."},
+        "ar": {"title": "تحديث فحص حديث الولادة",
+               "body": "أعاد فحص طفلك حديث الولادة نتيجة يود فريق طب الأطفال مراجعتها معك. هذا النوع من النتائج شائع وغالباً ما يتطلب خطوات بسيطة ومباشرة. سيتواصل معك أخصائي لترتيب موعد في وقت مناسب.",
+               "action": _ACT_AR, "disclaimer": "المتابعة المبكرة تمنح طفلك أفضل النتائج. هذه الرسالة للإعلام فقط."},
     },
     "ZD-904": {
-        "resourceType": "RiskAssessment",
-        "id": "SR-2026-ZD-904-CVD",
-        "status": "final",
-        "code": {
-            "coding": [
-                {
-                    "system": "http://snomed.info/sct",
-                    "code": "718687005",
-                    "display": "Cardiovascular risk assessment",
-                }
-            ]
-        },
-        "subject": {
-            "reference": "Patient/EID-784-XXXX-XXXX-9",
-            "display": "Tokenised Patient",
-        },
-        "prediction": [
-            {
-                "outcome": {"text": "10-year cardiovascular event risk"},
-                "probabilityDecimal": 0.11,
-                "qualitativeRisk": {"text": "High — SCORE2 >= 10%"},
-            }
-        ],
-    },
-    "ZD-905": {
-        "resourceType": "Observation",
-        "id": "SR-2026-ZD-905-DM",
-        "status": "final",
-        "code": {
-            "coding": [
-                {
-                    "system": "http://loinc.org",
-                    "code": "4548-4",
-                    "display": "Hemoglobin A1c/Hemoglobin.total in Blood",
-                }
-            ]
-        },
-        "subject": {
-            "reference": "Patient/EID-784-XXXX-XXXX-5",
-            "display": "Tokenised Patient",
-        },
-        "effectiveDateTime": "2026-11-09T08:00:00+04:00",
-        "valueQuantity": {"value": 8.1, "unit": "%"},
-        "interpretation": [{"coding": [{"code": "H", "display": "Above reference range"}]}],
-        "note": [{"text": "OFFLINE_FALLBACK: Patient flagged as non-digital. Call Centre escalation triggered automatically."}],
+        "en": {"title": "Your Health Check Results",
+               "body": "Your comprehensive health check identified some factors our team would like to discuss with you. These are manageable with the right guidance and support. Your care navigator will contact you to book a consultation at a time that suits you.",
+               "action": _ACT_EN,
+               "disclaimer": "Taking action now can significantly improve your long-term health. This message is for information only."},
+        "ar": {"title": "نتائج الفحص الصحي الشامل",
+               "body": "كشف الفحص الصحي الشامل عن بعض العوامل التي يود فريقنا مناقشتها معك. يمكن التعامل معها بالتوجيه والدعم المناسبين. سيتواصل معك منسق الرعاية لحجز استشارة في الوقت المناسب.",
+               "action": _ACT_AR, "disclaimer": "اتخاذ الإجراء الآن يحسّن صحتك على المدى البعيد. هذه الرسالة للإعلام فقط."},
     },
 }
 
-BILINGUAL: dict[str, dict] = {
-    "ZD-901": {
-        "en": {
-            "title": "Your Genetic Screening Result",
-            "body": "Your genetic screening has been completed. The result needs a brief conversation with one of our specialists. This does not mean you are unwell. A counselor will explain what this means for you and your family and answer any questions you have. No decision needs to be made today.",
-            "action": "Please confirm below that you have read and understood this message.",
-            "disc": "This message is for information only and does not constitute a diagnosis or medical advice.",
-        },
-        "ar": {
-            "title": "نتيجة الفحص الجيني",
-            "body": "تم إجراء الفحص الجيني الخاص بك. تستدعي النتيجة إجراء محادثة مع أحد متخصصينا. لا يعني ذلك أنك مريض. سيشرح لك المستشار ما يعنيه هذا بالنسبة لك ولعائلتك ويجيب على تساؤلاتك. لا حاجة لاتخاذ أي قرار اليوم.",
-            "action": "يرجى التأكيد أدناه على أنك قرأت هذه الرسالة وفهمت مضمونها.",
-            "disc": "هذه الرسالة للإعلام فقط. لا تُشكّل تشخيصاً أو نصيحة طبية.",
-        },
-    },
-    "ZD-902": {
-        "en": {
-            "title": "Your Breast Screening Requires Attention",
-            "body": "Your recent breast screening identified a finding our care team would like to discuss with you. This is not a diagnosis. We want to make sure you receive the right follow-up care promptly. Your doctor will contact you within 24 hours to explain the next steps.",
-            "action": "Please confirm below that you have read and understood this message.",
-            "disc": "Your privacy is protected. This information is shared only with your authorised care team.",
-        },
-        "ar": {
-            "title": "فحص الثدي يحتاج إلى اهتمام",
-            "body": "كشف فحص الثدي الأخير عن نتيجة يود فريق رعايتنا مناقشتها معك. هذا ليس تشخيصاً. نريد التأكد من حصولك على المتابعة المناسبة في الوقت المناسب. سيتصل بك طبيبك خلال 24 ساعة.",
-            "action": "يرجى التأكيد أدناه على أنك قرأت هذه الرسالة وفهمت مضمونها.",
-            "disc": "خصوصيتك محمية. تُشارَك هذه المعلومات فقط مع فريق رعايتك المُعتمد.",
-        },
-    },
-    "ZD-903": {
-        "en": {
-            "title": "Your Newborn Screening Update",
-            "body": "The newborn screening for your baby has returned a result our paediatric team would like to review with you. This type of finding is common and often requires simple, straightforward steps. A specialist will contact you to arrange a convenient appointment.",
-            "action": "Please confirm below that you have read and understood this message.",
-            "disc": "Early follow-up gives your baby the best possible outcome. This message is for information only.",
-        },
-        "ar": {
-            "title": "تحديث فحص حديث الولادة",
-            "body": "أعاد فحص طفلك حديث الولادة نتيجة يود فريق طب الأطفال مراجعتها معك. هذا النوع من النتائج شائع وغالباً ما يتطلب خطوات بسيطة ومباشرة. سيتواصل معك أخصائي لترتيب موعد.",
-            "action": "يرجى التأكيد أدناه على أنك قرأت هذه الرسالة وفهمت مضمونها.",
-            "disc": "المتابعة المبكرة تمنح طفلك أفضل النتائج.",
-        },
-    },
-    "ZD-904": {
-        "en": {
-            "title": "Your Health Check Results",
-            "body": "Your comprehensive health check identified some factors our team would like to discuss with you. These are manageable with the right guidance and support. Your care navigator will contact you to book a consultation at a time that suits you.",
-            "action": "Please confirm below that you have read and understood this message.",
-            "disc": "Taking action now can significantly improve your long-term health. This message is for information only.",
-        },
-        "ar": {
-            "title": "نتائج الفحص الصحي الشامل",
-            "body": "كشف الفحص الصحي الشامل عن بعض العوامل التي يود فريقنا مناقشتها معك. يمكن التعامل معها بالتوجيه والدعم المناسبين. سيتواصل معك منسق الرعاية لحجز استشارة.",
-            "action": "يرجى التأكيد أدناه على أنك قرأت هذه الرسالة وفهمت مضمونها.",
-            "disc": "اتخاذ الإجراء الآن يحسّن صحتك على المدى البعيد.",
-        },
-    },
-    "ZD-905": {
-        "en": {
-            "title": "Your Blood Sugar Screening Result",
-            "body": "Your recent blood test showed a result that our care team would like to follow up with you about. This is a common finding and is very manageable with early support. Because we were unable to reach you digitally, one of our care coordinators will call you on your registered telephone number within 48 hours.",
-            "action": "Please ask our coordinator to confirm you have received and understood this message during your call.",
-            "disc": "This message is for information only. Your call coordinator will arrange any next steps. No diagnosis is made here.",
-        },
-        "ar": {
-            "title": "نتيجة فحص السكر في الدم",
-            "body": "أظهر اختبار الدم الأخير نتيجة يود فريق رعايتنا متابعتها معك. هذه نتيجة شائعة ويمكن التعامل معها بشكل جيد مع الدعم المبكر. نظراً لعدم تمكننا من الوصول إليك رقمياً، سيتصل بك أحد منسقي الرعاية على رقم هاتفك المسجل خلال 48 ساعة.",
-            "action": "يرجى أن تطلب من المنسق التأكيد على استلامك وفهمك لهذه الرسالة أثناء المكالمة.",
-            "disc": "هذه الرسالة للإعلام فقط. سيرتب منسق المكالمة الخطوات التالية. لا يتم تشخيص أي حالة هنا.",
-        },
-    },
+
+def bilingual(cid: str) -> dict:
+    return {lang: {**v, "disc": v["disclaimer"]} for lang, v in BILINGUAL_MESSAGES.get(cid, {}).items()}
+
+
+# ═══════════════ FHIR R4 MOCK PAYLOADS (simulated Malaffi, no real data) ═══════════════
+def _meta(t): return {"profile": [f"http://hl7.org/fhir/StructureDefinition/{t}"]}
+def _cd(sys, code, disp): return {"coding": [{"system": sys, "code": code, "display": disp}]}
+
+FHIR_PAYLOADS: dict = {
+    "ZD-901": {"resourceType": "Observation", "id": "SR-2026-ZD-901-BTC", "meta": _meta("Observation"), "status": "final",
+               "code": _cd("http://snomed.info/sct", "413427002", "Beta-thalassemia carrier status"),
+               "subject": {"reference": "Patient/EID-784-XXXX-XXXX-3", "display": "Tokenised Patient (ZD-901)"},
+               "performer": [{"reference": "Organization/SEHA-Central-Lab"}],
+               "valueCodeableConcept": {"coding": [{"code": "carrier", "display": "Carrier status confirmed"}]},
+               "note": [{"text": "FHIR R4 compliant resource. Malaffi HIE simulated endpoint. No raw PII transmitted or stored."}]},
+    "ZD-902": {"resourceType": "DiagnosticReport", "id": "SR-2026-ZD-902-BRCA", "meta": _meta("DiagnosticReport"), "status": "final",
+               "code": _cd("http://loinc.org", "24606-6", "Mammography screening study"),
+               "subject": {"reference": "Patient/EID-784-XXXX-XXXX-7", "display": "Tokenised Patient (ZD-902)"},
+               "performer": [{"reference": "Organization/Mubadala-Breast-Care"}],
+               "conclusion": "BI-RADS Category 4 — Suspicious. Tissue biopsy recommended.",
+               "note": [{"text": "FHIR R4 compliant. Priority escalation trigger activated."}]},
+    "ZD-903": {"resourceType": "Observation", "id": "SR-2026-ZD-903-PKU", "meta": _meta("Observation"), "status": "final",
+               "code": _cd("http://snomed.info/sct", "360257000", "Phenylalanine measurement"),
+               "subject": {"reference": "Patient/EID-784-XXXX-XXXX-1", "display": "Tokenised Patient (ZD-903)"},
+               "performer": [{"reference": "Organization/SEHA-Neonatal-Lab"}],
+               "valueQuantity": {"value": 18.4, "unit": "mg/dL", "system": "http://unitsofmeasure.org", "code": "mg/dL"},
+               "interpretation": [{"coding": [{"code": "H", "display": "Above reference range"}]}],
+               "note": [{"text": "Elevated phenylalanine on day-3 heel-prick. Metabolic specialist referral triggered automatically."}]},
+    "ZD-904": {"resourceType": "RiskAssessment", "id": "SR-2026-ZD-904-CVD", "meta": _meta("RiskAssessment"), "status": "final",
+               "code": _cd("http://snomed.info/sct", "718687005", "Cardiovascular risk assessment"),
+               "subject": {"reference": "Patient/EID-784-XXXX-XXXX-9", "display": "Tokenised Patient (ZD-904)"},
+               "performer": {"reference": "Organization/SEHA-Wellness-Centre"},
+               "prediction": [{"outcome": {"text": "10-year cardiovascular event risk"}, "probabilityDecimal": 0.11,
+                               "qualitativeRisk": {"text": "High — SCORE2 >= 10%"}}],
+               "note": [{"text": "Lifestyle counselling and pharmacotherapy discussion indicated. Referral to Mubadala Cardiology recommended."}]},
 }
 
-# Working copy that gets mutated at runtime
-_cases: list[dict[str, Any]] = copy.deepcopy(_CASES_SEED)
+
+# ═══════════════ HELPERS ═══════════════
+def now_() -> datetime: return datetime.now().replace(microsecond=0)
+def hrs(a: datetime, b: datetime) -> float: return (b - a).total_seconds() / 3600
+def slot(n: datetime, days: int) -> datetime:      # mock appointment slot: 09:00, N days ahead
+    return (n + timedelta(days=days)).replace(hour=9, minute=0, second=0)
 
 
-def _get_case(case_id: str) -> dict[str, Any]:
-    for c in _cases:
-        if c["id"] == case_id:
-            return c
-    raise HTTPException(status_code=404, detail=f"Case {case_id} not found")
+# ═══════════════ MODELS ═══════════════
+class Event(BaseModel):
+    stage: int
+    ts: str
+    actor: str
+    desc: str
 
 
-def _now_ts() -> str:
-    return datetime.now().strftime("%H:%M  %d %b %Y")
+class Case(BaseModel):
+    id: str
+    eid: str                         # tokenised Emirates ID
+    pathway: str
+    condition: str
+    stage: int = 0
+    priority: str = "NORMAL"
+    provider_chain: List[str]
+    referral_start: int              # index of first specialist in chain
+    referral_idx: int                # current referral target pointer
+    sla_total: int                   # minutes
+    sla_deadline: datetime
+    owner: str
+    owner_accepted: bool = False
+    patient_token: str
+    fhir_id: str
+    patient_age: int
+    missed_calls: int = 0
+    no_show_count: int = 0
+    branch: str = ""                 # "" | MISSED_APPOINTMENT_RECOVERY
+    escalated: bool = False
+    navigator_dispatched: bool = False
+    issued_at: datetime
+    stage_entered_at: datetime
+    last_contact_at: Optional[datetime] = None
+    appointment: Optional[datetime] = None
+    appointment_status: str = "NONE"   # NONE | SCHEDULED | ATTENDED | MISSED
+    referral_status: str = "NONE"      # NONE | PENDING | ACCEPTED | EXHAUSTED
+    referral_since: Optional[datetime] = None
+    rejected_by: List[str] = []
+    closure_token: str = ""
+    closure_evidence: str = ""
+    timeline: List[Event] = []
+
+    def note(self, actor: str, desc: str, n: datetime) -> None:
+        self.timeline.append(Event(stage=self.stage, ts=n.strftime(TS_FMT), actor=actor, desc=desc))
+
+    def enter(self, stage: int, n: datetime) -> None:
+        self.stage, self.stage_entered_at = stage, n
+        self.sla_deadline = n + timedelta(minutes=self.sla_total)
+
+    def reset_sla(self, n: datetime) -> None:
+        self.sla_deadline = n + timedelta(minutes=self.sla_total)
+
+    def sla_fraction(self, n: datetime) -> float:
+        return max(0.0, min(1.0, (self.sla_deadline - n).total_seconds() / (self.sla_total * 60)))
+
+    def state(self) -> str: return self.branch or STAGES[self.stage]
+    def target(self) -> Optional[str]:
+        return self.provider_chain[self.referral_idx] if self.referral_idx < len(self.provider_chain) else None
+
+    def bump_priority(self) -> None:
+        order = ["NORMAL", "HIGH", "CRITICAL"]
+        self.priority = order[min(order.index(self.priority) + 1, 2)]
 
 
-def _sla_fraction(c: dict) -> float:
-    total = c["sla_total"]
-    if total <= 0:
-        return 0.0
-    return max(0.0, min(1.0, c["sla_remaining"] / total))
+# ═══════════════ CONTEXTUAL ACTIONS (replaces the single "advance" button) ═══════════════
+def _a(key, label, style): return {"key": key, "label": label, "style": style}
 
 
-def _sla_status(c: dict) -> str:
-    f = _sla_fraction(c)
-    if f < 0.15:
-        return "BREACH"
-    if f < 0.35:
-        return "WARNING"
-    return "OK"
+def available_actions(c: Case) -> List[dict]:
+    s, out = c.stage, []
+    if s == 0:
+        out.append(_a("dispatch_notification", "Dispatch Notification", "primary"))
+    elif s == 1:
+        out += [_a("log_call_no_answer", f"Log Call – No Answer ({c.missed_calls}/{MAX_CALL_ATTEMPTS})", "danger"),
+                _a("patient_reached", "Patient Reached", "green")]
+    elif s == 2:
+        out.append(_a("confirm_verbal_ack", "Confirm Verbal Acknowledgement", "primary"))
+    elif s == 3:
+        out.append(_a("start_consult", "Begin Clinician Consult", "primary"))
+    elif s == 4:
+        if c.branch == MISSED:
+            out.append(_a("reschedule_appointment", "Reschedule (Recovery)", "primary"))
+        elif c.appointment_status == "NONE":
+            out.append(_a("schedule_appointment", "Schedule Appointment", "primary"))
+        elif c.appointment_status == "SCHEDULED":
+            out += [_a("mark_attended", "Mark Attended", "green"), _a("mark_no_show", "Log No-Show", "danger"),
+                    _a("reschedule_appointment", "Reschedule", "secondary")]
+        elif c.appointment_status == "ATTENDED":
+            if c.referral_status == "NONE":
+                out.append(_a("submit_referral", f"Submit Referral → {c.target() or '—'}", "primary"))
+            elif c.referral_status == "PENDING":
+                out += [_a("provider_accepts", "Provider Accepts", "green"),
+                        _a("provider_rejects", "Provider Rejects (Capacity Full)", "danger")]
+            elif c.referral_status == "EXHAUSTED":
+                out.append(_a("restart_referral_chain", "Restart Referral Chain", "secondary"))
+    if 1 <= s <= 4 and not c.navigator_dispatched:
+        out.append(_a("dispatch_navigator", "Dispatch Physical Navigator", "secondary"))
+    return out                       # stage 5 → Closure Lock only; stage 6 → none
 
 
-# ─────────────────────────────────────────────────────────────
-#  FASTAPI APP
-# ─────────────────────────────────────────────────────────────
-
-app = FastAPI(
-    title="ZeroDrop Orchestration API",
-    description="Deterministic rule-based screening-to-care loop engine. NOT a SaMD.",
-    version="3.1.0",
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],          # Tighten to specific origin in production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+def _r(level, msg, toast=False): return {"level": level, "message": msg, "toast": toast}
 
 
-# ─────────────────────────────────────────────────────────────
-#  REQUEST / RESPONSE SCHEMAS
-# ─────────────────────────────────────────────────────────────
+def reroute_referral(c: Case, n: datetime, actor: str = "Routing Agent") -> dict:
+    """Capacity bounce: specialist rejects → auto-route to next provider in chain."""
+    rejected = c.target()
+    c.rejected_by.append(rejected)
+    c.referral_idx += 1
+    c.reset_sla(n)
+    nxt = c.target()
+    if nxt is None:
+        c.referral_status = "EXHAUSTED"
+        c.note(actor, f"{rejected} rejected referral (capacity full). No further providers — manual placement required.", n)
+        return _r("error", f"{c.id} · {rejected} at capacity · provider chain exhausted", True)
+    c.referral_status, c.referral_since = "PENDING", n
+    c.note(actor, f"{rejected} rejected referral (capacity full). Auto-rerouted to {nxt}. SLA reset.", n)
+    return _r("action", f"{c.id} · {rejected} at capacity → auto-rerouted to {nxt} · SLA reset", True)
 
-class ClosureRequest(BaseModel):
+
+def apply_action(c: Case, key: str, actor: str, n: datetime) -> dict:
+    if key not in {a["key"] for a in available_actions(c)}:
+        raise HTTPException(409, f"Action '{key}' is not permitted in state {c.state()}.")
+    if key == "dispatch_notification":
+        c.enter(1, n)
+        c.note("Patient Navigator — System", "Bilingual SMS and app notification dispatched via Malaffi patient gateway.", n)
+        return _r("info", f"{c.id} · bilingual notification dispatched")
+    if key == "log_call_no_answer":
+        c.missed_calls += 1
+        if c.missed_calls >= MAX_CALL_ATTEMPTS:
+            c.escalated = True
+            c.bump_priority()
+            c.enter(2, n)
+            c.note(actor, f"Call {c.missed_calls}/{MAX_CALL_ATTEMPTS} unanswered. Branched to ESCALATED_UNREACHABLE — call-centre fallback.", n)
+            return _r("warn", f"{c.id} · 3 unanswered calls → ESCALATED_UNREACHABLE", True)
+        c.note(actor, f"Call attempt {c.missed_calls}/{MAX_CALL_ATTEMPTS} — no answer.", n)
+        return _r("warn", f"{c.id} · call {c.missed_calls}/{MAX_CALL_ATTEMPTS} unanswered")
+    if key in ("patient_reached", "confirm_verbal_ack"):
+        c.last_contact_at = n
+        c.enter(3, n)
+        c.note(actor, "Patient reached; receipt and understanding confirmed" + (" verbally." if key == "confirm_verbal_ack" else "."), n)
+        return _r("success", f"{c.id} · patient acknowledged")
+    if key == "start_consult":
+        c.enter(4, n)
+        c.note(actor, "Clinician consult initiated.", n)
+        return _r("action", f"{c.id} · clinician consult started")
+    if key in ("schedule_appointment", "reschedule_appointment"):
+        was_missed = c.branch == MISSED
+        c.appointment = slot(n, 1 if key == "reschedule_appointment" else 3)
+        c.appointment_status, c.branch = "SCHEDULED", ""
+        c.reset_sla(n)
+        c.note(actor, f"Appointment {'rescheduled (recovery)' if was_missed or key.startswith('res') else 'scheduled'} for {c.appointment.strftime('%a %d %b, %H:%M')} (mock slot).", n)
+        return _r("action", f"{c.id} · appointment set {c.appointment.strftime('%a %d %b %H:%M')}")
+    if key == "mark_attended":
+        c.appointment_status, c.last_contact_at = "ATTENDED", n
+        c.note(actor, "Patient attended appointment.", n)
+        return _r("success", f"{c.id} · appointment attended")
+    if key == "mark_no_show":
+        c.appointment_status, c.branch = "MISSED", MISSED
+        c.no_show_count += 1
+        c.bump_priority()
+        c.reset_sla(n)
+        c.note(actor, f"Appointment missed (no-show #{c.no_show_count}). Branched to {MISSED}.", n)
+        return _r("error", f"{c.id} · no-show → {MISSED}", True)
+    if key == "submit_referral":
+        c.referral_status, c.referral_since = "PENDING", n
+        c.note(actor, f"Referral submitted to {c.target()}.", n)
+        return _r("action", f"{c.id} · referral submitted to {c.target()}")
+    if key == "provider_accepts":
+        c.referral_status = "ACCEPTED"
+        c.enter(5, n)
+        c.note(f"{c.target()} — Coordinator", f"{c.target()} accepted referral.", n)
+        return _r("success", f"{c.id} · referral accepted by {c.target()}")
+    if key == "provider_rejects":
+        return reroute_referral(c, n, actor)
+    if key == "restart_referral_chain":
+        c.referral_idx, c.rejected_by, c.referral_status = c.referral_start, [], "NONE"
+        c.note(actor, "Referral chain restarted by clinician.", n)
+        return _r("info", f"{c.id} · referral chain restarted")
+    if key == "dispatch_navigator":
+        c.navigator_dispatched, c.last_contact_at = True, n
+        c.note(actor, "Physical care navigator dispatched to patient.", n)
+        return _r("action", f"{c.id} · physical navigator dispatched")
+    raise HTTPException(400, "Unknown action")
+
+
+def auto_detect_missed(cases: List[Case], n: datetime) -> List[str]:
+    """Deterministic rule: scheduled appointment + 30 min grace elapsed → no-show branch."""
+    msgs = []
+    for c in cases:
+        if c.stage == 4 and c.appointment_status == "SCHEDULED" and c.appointment and n > c.appointment + timedelta(minutes=30):
+            msgs.append(apply_action(c, "mark_no_show", "AI Watchdog — Auto-detect", n)["message"])
+    return msgs
+
+
+# ═══════════════ OPERATIONAL AI WATCHDOG (deterministic, explainable) ═══════════════
+SEV_RANK = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2}
+BOTTLENECK = {0: "the result has not been dispatched to the patient", 1: "the patient is not responding to notification",
+              2: "the call centre has not confirmed contact", 3: "the clinician consult has not started",
+              4: "the appointment or referral handoff is incomplete", 5: "closure evidence and Malaffi confirmation are outstanding"}
+STAGE_REC = {0: ("Dispatch the notification now", "dispatch_notification"),
+             1: ("Try an alternate channel or dispatch a physical navigator", "dispatch_navigator"),
+             2: ("Call-centre coordinator to confirm verbal acknowledgement", "confirm_verbal_ack"),
+             3: ("Begin the clinician consult", "start_consult"),
+             4: ("Chase the appointment/referral owner and confirm the next step", None),
+             5: ("Collect the Malaffi token and close via the Closure Lock", None)}
+
+
+def risk_factors(c: Case, n: datetime) -> List[dict]:
+    f = []
+    def add(sig, detail, w, grp): f.append({"signal": sig, "detail": detail, "weight": w, "group": grp})
+    if c.missed_calls: add("Missed follow-up calls", f"{c.missed_calls} unanswered", min(15 * c.missed_calls, 45), "patient")
+    if c.no_show_count: add("Prior missed appointments", f"{c.no_show_count} no-show(s)", min(30 * c.no_show_count, 60), "patient")
+    if c.patient_age >= ELDERLY_AGE: add("Elderly patient (engagement proxy)", f"age {c.patient_age}", 15, "patient")
+    silent = hrs(c.last_contact_at or c.issued_at, n)
+    if silent > 48: add("No patient contact", f"{silent:.0f}h", 25, "ops")
+    elif silent > 24: add("No patient contact", f"{silent:.0f}h", 15, "ops")
+    frac = c.sla_fraction(n)
+    if frac < 0.15: add("SLA pressure", f"{frac:.0%} remaining", 20, "ops")
+    elif frac < 0.35: add("SLA pressure", f"{frac:.0%} remaining", 10, "ops")
+    dwell, lim = hrs(c.stage_entered_at, n), DWELL_LIMIT_H.get(c.stage)
+    if lim and dwell > lim: add("Stage dwell over limit", f"{dwell:.1f}h vs {lim}h limit", 20, "ops")
+    if not c.owner_accepted and hrs(c.issued_at, n) * 60 > OWNER_ACCEPT_MIN:
+        add("Ownership not accepted", f"{hrs(c.issued_at, n) * 60:.0f} min", 15, "ops")
+    if c.rejected_by: add("Capacity rejections", f"{len(c.rejected_by)} provider(s) declined", min(10 * len(c.rejected_by), 20), "ops")
+    if c.navigator_dispatched: add("Mitigation: navigator dispatched", "in the field", -20, "mitigation")
+    return f
+
+
+def _plural(n, w): return f"{n} {w}{'' if n == 1 else 's'}"
+
+
+def analyze_dropoff_risk(cases: List[Case], n: datetime) -> List[dict]:
+    out: List[dict] = []
+    prov: Dict[str, List[str]] = {}
+    valid = lambda c, k: bool(k) and k in {a["key"] for a in available_actions(c)}
+
+    def mk(c, typ, sev, title, exp, rec, key=None, risk=None, factors=None):
+        out.append({"id": f"{c.id}:{typ}", "case_id": c.id, "type": typ, "severity": sev, "risk_pct": risk,
+                    "title": title, "explanation": exp, "factors": factors or [], "recommended_action": rec,
+                    "action_key": key if (key == "accept_ownership" or valid(c, key)) else None})
+
+    for c in cases:
+        for p in c.rejected_by: prov.setdefault(p, []).append(c.id)
+        if c.stage >= 6: continue
+        # 1 — drop-off / no-show risk score (additive, capped at 95)
+        f = risk_factors(c, n)
+        score = max(0, min(95, sum(x["weight"] for x in f)))
+        if score >= RISK_ALERT_PCT:
+            behav = []
+            if c.patient_age >= ELDERLY_AGE: behav.append(f"is elderly ({c.patient_age})")
+            if c.missed_calls: behav.append(f"has missed {_plural(c.missed_calls, 'follow-up call')}")
+            if c.no_show_count: behav.append(f"has {_plural(c.no_show_count, 'prior no-show')}")
+            ops = [f"{x['signal']} ({x['detail']})" for x in f if x["group"] == "ops"]
+            exp = (f"Patient {c.id} " + ", ".join(behav) + "." if behav else "") + \
+                  (f" Operational signals: {'; '.join(ops)}." if ops else "")
+            if c.navigator_dispatched: rec, key = "Navigator already dispatched — await visit outcome", None
+            elif c.no_show_count >= 1 or (c.patient_age >= ELDERLY_AGE and c.missed_calls >= 2): rec, key = "Dispatch physical care navigator", "dispatch_navigator"
+            elif c.stage in (1, 2) and c.missed_calls >= 1: rec, key = "Use an alternate channel; auto-escalation to call centre at 3 unanswered calls", None
+            elif c.sla_fraction(n) < 0.35: rec, key = "Notify on-call clinician and prioritise outreach", None
+            else: rec, key = "Navigator outreach call within 2 hours", None
+            hi = score >= RISK_HIGH_PCT
+            kind = "No-Show" if c.stage >= 3 else "Drop-off"
+            mk(c, "DROPOFF_RISK", "HIGH" if hi else "MEDIUM", f"{'High' if hi else 'Elevated'} Risk of {kind} ({score}%)",
+               exp.strip(), rec, key, score, f)
+        # 2 — missed appointments
+        if c.branch == MISSED:
+            mk(c, "MISSED_APPOINTMENT", "HIGH", "Missed Appointment — Recovery Required",
+               f"{c.id} missed its appointment (no-show count: {c.no_show_count}) and moved to {MISSED}. The referral cannot progress until a new slot is confirmed.",
+               "Reschedule within 24h and dispatch a physical navigator", "reschedule_appointment")
+        elif c.appointment_status == "SCHEDULED" and c.appointment and n > c.appointment:
+            mk(c, "MISSED_APPOINTMENT", "HIGH", "Appointment Overdue — Possible No-Show",
+               f"{c.id} appointment time ({c.appointment.strftime('%a %d %b %H:%M')}) has passed with no attendance recorded.",
+               "Confirm attendance or log a no-show", "mark_no_show")
+        # 3 — delayed procedure (stage dwell breach)
+        dwell, lim = hrs(c.stage_entered_at, n), DWELL_LIMIT_H.get(c.stage)
+        if lim and dwell > lim:
+            rec, key = STAGE_REC[c.stage]
+            mk(c, "DELAYED_PROCEDURE", "HIGH" if dwell > 2 * lim else "MEDIUM",
+               f"Delay Detected: {STAGE_DISPLAY[c.stage]} for {dwell:.1f}h (limit {lim}h)",
+               f"{c.id} has remained in '{STAGE_DISPLAY[c.stage]}' beyond the {lim}h threshold. Stage owner role: {STAGE_OWNER[c.stage]}. Likely bottleneck: {BOTTLENECK[c.stage]}.",
+               rec, key, factors=[x for x in f if x["signal"] == "Stage dwell over limit"])
+        # 4 — incomplete handoffs
+        if not c.owner_accepted and hrs(c.issued_at, n) * 60 > OWNER_ACCEPT_MIN:
+            mk(c, "INCOMPLETE_HANDOFF", "MEDIUM", "Incomplete Handoff: No Owner Has Accepted",
+               f"{c.id} is assigned to {c.owner} but ownership has not been accepted. Actions and closure stay blocked until a named clinician accepts.",
+               "Assigned owner to accept responsibility", "accept_ownership")
+        if c.referral_status == "EXHAUSTED":
+            mk(c, "INCOMPLETE_HANDOFF", "CRITICAL", "Referral Chain Exhausted",
+               f"All providers in the chain rejected {c.id} for capacity ({', '.join(c.rejected_by)}).",
+               "Clinician-led manual placement, or restart the chain", "restart_referral_chain")
+        elif c.referral_status == "PENDING" and c.referral_since and hrs(c.referral_since, n) > REFERRAL_RESPONSE_H:
+            mk(c, "INCOMPLETE_HANDOFF", "HIGH", "Stalled Referral Handoff",
+               f"{c.target()} has not responded to the {c.id} referral for {hrs(c.referral_since, n):.1f}h (limit {REFERRAL_RESPONSE_H}h).",
+               "Contact the provider coordinator; re-route if no answer within 1h", None)
+    # 5 — provider-level bottleneck
+    for p, ids in prov.items():
+        out.append({"id": f"SYSTEM:BOTTLENECK:{p}", "case_id": "SYSTEM", "type": "CLINIC_BOTTLENECK", "severity": "MEDIUM",
+                    "risk_pct": None, "title": f"Capacity Bottleneck: {p}",
+                    "explanation": f"{p} rejected {_plural(len(ids), 'referral')} for capacity ({', '.join(ids)}). New referrals to this provider are likely to bounce.",
+                    "factors": [], "recommended_action": "Deprioritise this provider in routing and notify the capacity manager", "action_key": None})
+    out.sort(key=lambda a: (SEV_RANK[a["severity"]], -(a["risk_pct"] or 0)))
+    return out
+
+
+# ═══════════════ SEED DATA (all times relative to "now" so the demo is always live) ═══════════════
+def seed_cases() -> List[Case]:
+    n = now_()
+    m = lambda x: n - timedelta(minutes=x)
+    ev = lambda st, mins, actor, d: Event(stage=st, ts=m(mins).strftime(TS_FMT), actor=actor, desc=d)
+    return [
+        Case(id="ZD-901", eid="EID-784-XXXX-XXXX-3", pathway="Pre-Marital Genetic Screening",
+             condition="Beta-Thalassemia Carrier Status", stage=1, priority="HIGH",
+             provider_chain=["SEHA Central Lab", "Mubadala Health Primary", "CCAD Genomics Centre", "SEHA Genetics Clinic"],
+             referral_start=2, referral_idx=2, sla_total=120, sla_deadline=n + timedelta(minutes=23),
+             owner="Nurse Hessa Al Dhaheri", owner_accepted=False, patient_token="PT-7731-A", fhir_id="SR-2026-ZD-901-BTC",
+             patient_age=29, missed_calls=1, issued_at=m(300), stage_entered_at=m(270),
+             timeline=[ev(0, 300, "SEHA Central Lab — Automated", "Beta-Thalassemia carrier status confirmed. FHIR R4 Observation created and dispatched to Malaffi."),
+                       ev(1, 270, "Patient Navigator — System", "Bilingual SMS and app notification dispatched via Malaffi patient gateway."),
+                       ev(1, 120, "Patient Navigator", "Call attempt 1/3 — no answer.")]),
+        Case(id="ZD-902", eid="EID-784-XXXX-XXXX-7", pathway="Breast Cancer Screening Programme",
+             condition="BRCA1 — BI-RADS 4 Actionable Finding", stage=4, priority="CRITICAL",
+             provider_chain=["Mubadala Breast Care Centre", "SEHA Primary Care", "CCAD Oncology", "Mubadala Oncology Centre"],
+             referral_start=2, referral_idx=2, sla_total=180, sla_deadline=n + timedelta(minutes=60),
+             owner="Dr. Aisha Khalil", owner_accepted=True, patient_token="PT-9942-B", fhir_id="SR-2026-ZD-902-BRCA",
+             patient_age=71, missed_calls=2, no_show_count=1, issued_at=m(300), stage_entered_at=m(180), last_contact_at=m(180),
+             appointment=slot(n, 1), appointment_status="SCHEDULED",
+             timeline=[ev(0, 300, "Mubadala Breast Care — Radiologist", "BI-RADS 4 finding flagged. FHIR DiagnosticReport created."),
+                       ev(1, 285, "Patient Navigator — System", "Secure bilingual priority notification dispatched."),
+                       ev(1, 280, "Patient Navigator", "Call attempt 1/3 — no answer."), ev(1, 260, "Patient Navigator", "Call attempt 2/3 — no answer."),
+                       ev(3, 200, "Patient — Secure App", "Patient confirmed receipt via secure app."),
+                       ev(4, 180, "Dr. Aisha Khalil", "Oncology consult initiated. Ownership accepted."),
+                       ev(4, 170, "Dr. Aisha Khalil", "Earlier appointment missed (no-show #1). Rescheduled via recovery path.")]),
+        Case(id="ZD-903", eid="EID-784-XXXX-XXXX-1", pathway="Newborn Metabolic Screening",
+             condition="Phenylketonuria (PKU) — Elevated Phenylalanine", stage=5, priority="NORMAL",
+             provider_chain=["SEHA Neonatal Lab", "SEHA Paediatrics", "CCAD Metabolic Unit", "SEHA Metabolic Clinic"],
+             referral_start=2, referral_idx=2, sla_total=480, sla_deadline=n + timedelta(minutes=420),
+             owner="Dr. Sara Naji", owner_accepted=True, patient_token="PT-5513-C", fhir_id="SR-2026-ZD-903-PKU",
+             patient_age=0, issued_at=m(3000), stage_entered_at=m(1200), last_contact_at=m(1300),
+             appointment=slot(n, 2), appointment_status="SCHEDULED", referral_status="ACCEPTED", referral_since=m(1200),
+             timeline=[ev(0, 3000, "SEHA Neonatal Lab — Automated", "Elevated phenylalanine on day-3 heel-prick. Auto-escalated to paediatric team."),
+                       ev(1, 2985, "Patient Navigator", "Parents notified via bilingual written report and telephone call."),
+                       ev(3, 2900, "Parent — Secure App", "Parents confirmed understanding and consent to follow-up."),
+                       ev(4, 1500, "Dr. Sara Naji", "Paediatrician e-consult completed. Specialist referral recommended."),
+                       ev(5, 1200, "CCAD Metabolic Unit — Coordinator", "CCAD Metabolic Unit accepted referral. Appointment confirmed.")]),
+        Case(id="ZD-904", eid="EID-784-XXXX-XXXX-9", pathway="Adult Comprehensive Screening",
+             condition="High Cardiovascular Risk — SCORE2 >= 10%", stage=0, priority="HIGH",
+             provider_chain=["SEHA Wellness Centre", "Mubadala Cardiology", "CCAD Cardiology"],
+             referral_start=1, referral_idx=1, sla_total=180, sla_deadline=n + timedelta(minutes=95),
+             owner="Patient Navigator Unit", owner_accepted=False, patient_token="PT-2287-D", fhir_id="SR-2026-ZD-904-CVD",
+             patient_age=52, issued_at=m(85), stage_entered_at=m(85),
+             timeline=[ev(0, 85, "SEHA Wellness Centre — Automated", "10-year cardiovascular risk score flagged. Lifestyle counselling and pharmacotherapy discussion required.")]),
+    ]
+
+
+DB: Dict[str, Case] = {c.id: c for c in seed_cases()}
+
+
+def get_case(cid: str) -> Case:
+    if cid not in DB: raise HTTPException(404, f"Case {cid} not found")
+    return DB[cid]
+
+
+def to_api(c: Case, n: datetime) -> dict:
+    d = c.model_dump(mode="json")
+    d.update(sla_seconds=max(0, int((c.sla_deadline - n).total_seconds())), state=c.state(),
+             available_actions=available_actions(c), is_offline_patient=c.stage == 2, current_target=c.target(),
+             appointment_label=c.appointment.strftime("%a %d %b %Y · %H:%M") if c.appointment else "",
+             appointment_epoch=int(c.appointment.timestamp() * 1000) if c.appointment else 0,
+             hours_in_stage=round(hrs(c.stage_entered_at, n), 1),
+             bilingual=bilingual(c.id), fhir_payload=FHIR_PAYLOADS.get(c.id, {}))
+    return d
+
+
+# ═══════════════ FASTAPI ═══════════════
+app = FastAPI(title="ZeroDrop Care Navigator API")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+
+class ActionIn(BaseModel):
+    action: str
+    actor: str = "Current User"
+
+
+class CloseIn(BaseModel):
     token: str
     evidence: str
 
 
-class OfflineFallbackRequest(BaseModel):
-    coordinator: Optional[str] = None
-
-
-# ─────────────────────────────────────────────────────────────
-#  ROUTES — META
-# ─────────────────────────────────────────────────────────────
-
-@app.get("/", tags=["meta"])
-def root():
-    return {
-        "service": "ZeroDrop Orchestration API",
-        "version": "3.1.0",
-        "stages": STAGE_LABELS,
-        "disclaimer": "NOT a Software as a Medical Device (SaMD).",
-    }
-
-
-@app.get("/stages", tags=["meta"])
-def get_stages():
-    """Return the full 7-stage definition — drives the frontend pipeline view."""
-    return {
-        "stages": [
-            {"index": i, "key": Stage(i).name, "label": STAGE_LABELS[i], "owner_role": STAGE_OWNERS[i]}
-            for i in range(len(Stage))
-        ],
-        "closure_evidence_options": CLOSURE_OPTS,
-    }
-
-
-# ─────────────────────────────────────────────────────────────
-#  ROUTES — CASES
-# ─────────────────────────────────────────────────────────────
-
-@app.get("/cases", tags=["cases"])
+@app.get("/cases")
 def list_cases():
-    """Return all cases with computed SLA metadata."""
-    enriched = []
-    for c in _cases:
-        enriched.append(
-            {
-                **c,
-                "sla_status": _sla_status(c),
-                "stage_label": STAGE_LABELS[c["stage"]],
-                "stage_owner_role": STAGE_OWNERS[c["stage"]],
-                "bilingual": BILINGUAL.get(c["id"]),
-                "fhir_payload": FHIR_PAYLOADS.get(c["id"]),
-            }
-        )
-    return enriched
+    n = now_()
+    return [to_api(c, n) for c in DB.values()]
 
 
-@app.get("/cases/{case_id}", tags=["cases"])
-def get_case(case_id: str):
-    c = _get_case(case_id)
-    return {
-        **c,
-        "sla_status": _sla_status(c),
-        "stage_label": STAGE_LABELS[c["stage"]],
-        "stage_owner_role": STAGE_OWNERS[c["stage"]],
-        "bilingual": BILINGUAL.get(case_id),
-        "fhir_payload": FHIR_PAYLOADS.get(case_id),
-    }
+@app.post("/cases/{cid}/accept_ownership")
+def accept_ownership(cid: str):
+    c, n = get_case(cid), now_()
+    if not c.owner_accepted:
+        c.owner_accepted = True
+        c.note(c.owner, "Ownership accepted. Audit entry created.", n)
+    return {"ok": True, "owner": c.owner}
 
 
-# ─────────────────────────────────────────────────────────────
-#  ROUTES — OWNERSHIP
-# ─────────────────────────────────────────────────────────────
-
-@app.post("/cases/{case_id}/accept_ownership", tags=["ownership"])
-def accept_ownership(case_id: str):
-    """
-    Named clinician / coordinator formally accepts case ownership.
-    Deterministic guard: no stage advance permitted without prior acceptance.
-    """
-    c = _get_case(case_id)
-    if c["owner_accepted"]:
-        return {"status": "already_accepted", "case": c["id"], "owner": c["owner"]}
-    c["owner_accepted"] = True
-    c["timeline"].append(
-        {
-            "ts": _now_ts(),
-            "stage": c["stage"],
-            "desc": f"Ownership formally accepted by {c['owner']}. Audit record created.",
-            "actor": c["owner"],
-        }
-    )
-    return {
-        "status": "accepted",
-        "case": c["id"],
-        "owner": c["owner"],
-        "audit_id": str(uuid.uuid4()),
-    }
+@app.post("/cases/{cid}/action")
+def case_action(cid: str, body: ActionIn):
+    c = get_case(cid)
+    if not c.owner_accepted:          # ownership guardrail applies to every workflow action
+        raise HTTPException(403, "Ownership has not been accepted. A named clinician must accept responsibility.")
+    return apply_action(c, body.action, body.actor, now_())
 
 
-# ─────────────────────────────────────────────────────────────
-#  ROUTES — STAGE TRANSITIONS
-# ─────────────────────────────────────────────────────────────
-
-@app.post("/cases/{case_id}/advance", tags=["workflow"])
-def advance_stage(case_id: str):
-    """
-    Move a case to the next stage.
-
-    Deterministic guards enforced:
-      • Ownership must be accepted before advance.
-      • Cannot advance past REFERRAL_ACCEPTED via this endpoint —
-        use /close for verified closure.
-      • OFFLINE_FALLBACK (stage 2) cannot be skipped — it must be
-        explicitly resolved via /resolve_offline_fallback.
-    """
-    c = _get_case(case_id)
-
-    if not c["owner_accepted"]:
-        raise HTTPException(
-            status_code=422,
-            detail="Ownership has not been accepted. A named clinician must accept responsibility before the case can advance.",
-        )
-
-    if c["stage"] >= Stage.REFERRAL_ACCEPTED:
-        raise HTTPException(
-            status_code=422,
-            detail="Case is at or beyond Referral Accepted. Use the /close endpoint with a verified evidence bundle.",
-        )
-
-    # Stage 1 → 2 for offline patients is automatic; skip for digital patients
-    # Normal advance: 1 → 3 (Patient Acknowledged) skipping Offline Fallback when patient is digital
-    next_stage = c["stage"] + 1
-    if next_stage == Stage.OFFLINE_FALLBACK and not c.get("is_offline_patient", False):
-        # Skip the offline fallback lane
-        next_stage = Stage.PATIENT_ACKNOWLEDGED
-
-    c["stage"] = next_stage
-    c["timeline"].append(
-        {
-            "ts": _now_ts(),
-            "stage": c["stage"],
-            "desc": f"Stage advanced to {STAGE_LABELS[c['stage']]}.",
-            "actor": c["owner"],
-        }
-    )
-    return {
-        "status": "advanced",
-        "case": c["id"],
-        "stage": c["stage"],
-        "stage_label": STAGE_LABELS[c["stage"]],
-        "audit_id": str(uuid.uuid4()),
-    }
+@app.post("/cases/{cid}/patient_acknowledge")
+def patient_acknowledge(cid: str):
+    c, n = get_case(cid), now_()
+    if c.stage not in (1, 2): raise HTTPException(409, "Nothing to acknowledge at this stage.")
+    c.last_contact_at = n
+    c.enter(3, n)
+    c.note("Patient — Secure Portal", "Patient confirmed receipt and understanding via secure portal.", n)
+    return {"ok": True}
 
 
-@app.post("/cases/{case_id}/resolve_offline_fallback", tags=["workflow"])
-def resolve_offline_fallback(case_id: str, body: OfflineFallbackRequest):
-    """
-    Call Centre coordinator marks verbal acknowledgement received.
-    Transitions OFFLINE_FALLBACK → PATIENT_ACKNOWLEDGED.
-    This endpoint is the ONLY valid way to exit the offline lane.
-    """
-    c = _get_case(case_id)
-    if c["stage"] != Stage.OFFLINE_FALLBACK:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Case is not at OFFLINE_FALLBACK stage (current: {STAGE_LABELS[c['stage']]}).",
-        )
-    coordinator = body.coordinator or c["owner"]
-    c["stage"] = Stage.PATIENT_ACKNOWLEDGED
-    c["timeline"].append(
-        {
-            "ts": _now_ts(),
-            "stage": c["stage"],
-            "desc": f"Verbal acknowledgement confirmed by Call Centre ({coordinator}). Case exits offline lane.",
-            "actor": coordinator,
-        }
-    )
-    return {
-        "status": "offline_resolved",
-        "case": c["id"],
-        "stage": c["stage"],
-        "stage_label": STAGE_LABELS[c["stage"]],
-        "coordinator": coordinator,
-        "audit_id": str(uuid.uuid4()),
-    }
+@app.post("/cases/{cid}/close")           # ── CLOSURE LOCK (unchanged rules) ──
+def close_case(cid: str, body: CloseIn):
+    c, n = get_case(cid), now_()
+    if c.stage != 5:
+        raise HTTPException(409, "Closure not permitted: case must reach Referral Accepted first.")
+    if not c.owner_accepted:
+        raise HTTPException(403, "Ownership has not been accepted.")
+    if not body.token.strip().startswith("MALAFFI-CONF-") or body.evidence not in CLOSURE_EVIDENCE_OPTIONS[1:]:
+        raise HTTPException(422, "Closure blocked: a valid Malaffi token (MALAFFI-CONF-XXXX) and evidence type are required.")
+    c.closure_token, c.closure_evidence = body.token.strip(), body.evidence
+    c.enter(6, n)
+    c.note(c.owner, f"Case CLOSED & VERIFIED. Token {c.closure_token}. Evidence: {c.closure_evidence}.", n)
+    return {"ok": True}
 
 
-@app.post("/cases/{case_id}/patient_acknowledge", tags=["patient_portal"])
-def patient_acknowledge(case_id: str):
-    """
-    Patient confirms receipt of notification via secure portal.
-    Transitions PATIENT_NOTIFIED → PATIENT_ACKNOWLEDGED.
-    """
-    c = _get_case(case_id)
-    if c["stage"] != Stage.PATIENT_NOTIFIED:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Patient acknowledgement only valid at PATIENT_NOTIFIED stage (current: {STAGE_LABELS[c['stage']]}).",
-        )
-    c["owner_accepted"] = True
-    c["stage"] = Stage.PATIENT_ACKNOWLEDGED
-    c["timeline"].append(
-        {
-            "ts": _now_ts(),
-            "stage": c["stage"],
-            "desc": "Patient acknowledged message and confirmed follow-up via secure portal.",
-            "actor": "Patient — Secure Portal",
-        }
-    )
-    return {
-        "status": "patient_acknowledged",
-        "case": c["id"],
-        "stage": c["stage"],
-        "stage_label": STAGE_LABELS[c["stage"]],
-    }
+@app.get("/ai/analyze_dropoff_risk")
+def ai_analyze():
+    n = now_()
+    alerts = analyze_dropoff_risk(list(DB.values()), n)
+    return {"generated_at": n.isoformat(), "engine": "Deterministic rules v1 — operational only, no clinical inference",
+            "thresholds": {"elderly_age": ELDERLY_AGE, "alert_pct": RISK_ALERT_PCT, "high_pct": RISK_HIGH_PCT,
+                           "dwell_limit_h": DWELL_LIMIT_H, "max_call_attempts": MAX_CALL_ATTEMPTS},
+            "count": len(alerts), "alerts": alerts}
 
 
-# ─────────────────────────────────────────────────────────────
-#  ROUTES — CLOSURE LOCK
-# ─────────────────────────────────────────────────────────────
-
-@app.post("/cases/{case_id}/close", tags=["workflow"])
-def close_case(case_id: str, body: ClosureRequest):
-    """
-    Evidence-locked case closure.
-
-    Both a valid Malaffi confirmation token (prefix: MALAFFI-CONF-) and
-    a documented closure evidence type are mandatory. Neither may be omitted.
-    Every closure is immutably appended to the case timeline.
-    """
-    c = _get_case(case_id)
-
-    if c["stage"] < Stage.REFERRAL_ACCEPTED:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Closure not permitted: case must reach REFERRAL_ACCEPTED first (current: {STAGE_LABELS[c['stage']]}).",
-        )
-    if c["stage"] == Stage.CLOSED_VERIFIED:
-        raise HTTPException(status_code=422, detail="Case is already closed.")
-
-    token = (body.token or "").strip()
-    evidence = (body.evidence or "").strip()
-
-    if not token.startswith("MALAFFI-CONF-"):
-        raise HTTPException(
-            status_code=422,
-            detail="Invalid Malaffi token. Required format: MALAFFI-CONF-XXXX.",
-        )
-    if not evidence or evidence == CLOSURE_OPTS[0]:
-        raise HTTPException(
-            status_code=422,
-            detail="No closure evidence type selected. You must document the evidence before closing.",
-        )
-
-    c["closure_token"] = token
-    c["closure_evidence"] = evidence
-    c["stage"] = Stage.CLOSED_VERIFIED
-    audit_id = str(uuid.uuid4())
-    c["timeline"].append(
-        {
-            "ts": _now_ts(),
-            "stage": Stage.CLOSED_VERIFIED,
-            "desc": f"Case closed. Token: {token}. Evidence: {evidence}. Audit: {audit_id}.",
-            "actor": c["owner"],
-        }
-    )
-    return {
-        "status": "closed_verified",
-        "case": c["id"],
-        "closure_token": token,
-        "closure_evidence": evidence,
-        "audit_id": audit_id,
-    }
-
-
-# ─────────────────────────────────────────────────────────────
-#  ROUTES — AGENT / SIMULATION
-# ─────────────────────────────────────────────────────────────
-
-@app.post("/agent/scan", tags=["agent"])
+@app.post("/agent/scan")
 def agent_scan():
-    """
-    Deterministic watchdog scan. Returns SLA status for all open cases.
-    Does not make any clinical decisions — only flags and routes.
-    """
-    alerts = []
-    for c in _cases:
-        status = _sla_status(c)
-        if c["stage"] < Stage.CLOSED_VERIFIED:
-            if not c["owner_accepted"]:
-                alerts.append(
-                    {
-                        "level": "warn",
-                        "case": c["id"],
-                        "msg": f"{c['id']} owner unaccepted — escalation queued",
-                    }
-                )
-            if status == "BREACH":
-                alerts.append(
-                    {
-                        "level": "error",
-                        "case": c["id"],
-                        "msg": f"{c['id']} SLA BREACH — medical director notified",
-                    }
-                )
-            elif status == "WARNING":
-                alerts.append(
-                    {
-                        "level": "warn",
-                        "case": c["id"],
-                        "msg": f"{c['id']} SLA WARNING — {c['sla_remaining']}m remaining",
-                    }
-                )
-            if c["stage"] == Stage.OFFLINE_FALLBACK:
-                alerts.append(
-                    {
-                        "level": "action",
-                        "case": c["id"],
-                        "msg": f"{c['id']} in OFFLINE_FALLBACK — Call Centre action required",
-                    }
-                )
-
-    open_count = sum(1 for c in _cases if c["stage"] < Stage.CLOSED_VERIFIED)
-    unverified = sum(1 for c in _cases if c["stage"] == Stage.CLOSED_VERIFIED and not c.get("closure_token"))
-    return {
-        "status": "scan_complete",
-        "open_cases": open_count,
-        "unverified_closures": unverified,
-        "alerts": alerts,
-        "audit": "ADHICS audit passed",
-    }
+    n = now_()
+    auto = auto_detect_missed(list(DB.values()), n)
+    smart = analyze_dropoff_risk(list(DB.values()), n)
+    alerts = [{"level": "warn", "msg": f"AUTO-ACTION: {m}"} for m in auto]
+    alerts += [{"level": "error" if a["severity"] in ("CRITICAL", "HIGH") else "warn",
+                "msg": f"{a['case_id']} · {a['title']} → {a['recommended_action']}"} for a in smart]
+    unverified = sum(1 for c in DB.values() if c.stage == 6 and not (c.closure_token.startswith("MALAFFI-CONF-") and c.closure_evidence))
+    return {"alerts": alerts, "auto_actions": auto, "smart_alerts": len(smart), "unverified_closures": unverified,
+            "open_cases": sum(1 for c in DB.values() if c.stage < 6), "audit": "closure lock intact · all closures carry token + evidence"}
 
 
-@app.post("/agent/simulate_rejection/{case_id}", tags=["agent"])
-def simulate_rejection(case_id: str):
-    """
-    Simulate a provider rejection and automatic re-route.
-    Demonstrates the drop-off prevention mechanism.
-    """
-    c = _get_case(case_id)
-    old_provider = c["provider_chain"][-1] if c["provider_chain"] else "Unknown Provider"
-    new_provider = "Mubadala Oncology Centre"
-    c["provider_chain"][-1] = new_provider
-    c["sla_remaining"] = min(c["sla_total"], c["sla_remaining"] + 20)  # SLA reset
-    c["timeline"].append(
-        {
-            "ts": _now_ts(),
-            "stage": c["stage"],
-            "desc": f"Referral rejected by {old_provider} (capacity). Auto-rerouted to {new_provider}. SLA reset. Patient notified.",
-            "actor": "AGENT-REROUTE: Deterministic Fallback",
-        }
-    )
-    return {
-        "status": "rerouted",
-        "case": c["id"],
-        "old_provider": old_provider,
-        "new_provider": new_provider,
-        "msg": f"Drop-off prevented. Referral rerouted to {new_provider}.",
-    }
+@app.post("/agent/simulate_rejection/{cid}")
+def simulate_rejection(cid: str):
+    c, n = get_case(cid), now_()
+    if c.stage != 4 or c.branch:
+        raise HTTPException(409, "Rejection can only be simulated during an active Clinician Consult (no recovery branch).")
+    if c.referral_status != "PENDING":
+        c.appointment_status, c.referral_status, c.referral_since = "ATTENDED", "PENDING", n
+        c.note("Simulation", f"Referral submitted to {c.target()} (simulated).", n)
+    return reroute_referral(c, n, "Routing Agent (simulated)")
 
 
-@app.post("/agent/trigger_sla_breach/{case_id}", tags=["agent"])
-def trigger_sla_breach(case_id: str):
-    """Simulation: burn down the SLA clock to force a breach."""
-    c = _get_case(case_id)
-    c["sla_remaining"] = max(0, c["sla_remaining"] - 10)
-    return {
-        "status": "sla_updated",
-        "case": c["id"],
-        "sla_remaining": c["sla_remaining"],
-        "sla_status": _sla_status(c),
-    }
+@app.post("/agent/trigger_sla_breach/{cid}")
+def trigger_sla_breach(cid: str):
+    c, n = get_case(cid), now_()
+    c.sla_deadline = n + timedelta(minutes=max(1, int(c.sla_total * 0.1)))
+    c.note("AI Watchdog", "SLA breach alert triggered — on-call clinician notified.", n)
+    return {"ok": True}
 
 
-# ─────────────────────────────────────────────────────────────
-#  ROUTES — PATIENT PORTAL
-# ─────────────────────────────────────────────────────────────
-
-@app.get("/patient/{token}", tags=["patient_portal"])
-def patient_portal_lookup(token: str):
-    """
-    Secure patient portal lookup by token.
-    Returns only the information the patient needs — no raw clinical data.
-    """
-    for c in _cases:
-        if c["patient_token"] == token:
-            return {
-                "id": c["id"],
-                "eid": c["eid"],
-                "pathway": c["pathway"],
-                "condition": c["condition"],
-                "stage": c["stage"],
-                "stage_label": STAGE_LABELS[c["stage"]],
-                "timeline": c["timeline"],
-                "bilingual": BILINGUAL.get(c["id"]),
-                "is_offline_patient": c.get("is_offline_patient", False),
-                "already_acknowledged": c["stage"] >= Stage.PATIENT_ACKNOWLEDGED,
-            }
-    raise HTTPException(status_code=404, detail="Token not recognised. Please check your notification message.")
-
-
-# ─────────────────────────────────────────────────────────────
-#  ENTRY POINT
-# ─────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+@app.post("/demo/reset")
+def demo_reset():
+    DB.clear()
+    DB.update({c.id: c for c in seed_cases()})
+    return {"ok": True}
